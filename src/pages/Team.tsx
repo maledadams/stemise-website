@@ -6,10 +6,10 @@ import hyunjunYiPhoto from "@/assets/team-hyunjun-yi.jpg";
 import landonMahlerPhoto from "@/assets/team-landon-mahler.jpg";
 import harryHonigPhoto from "@/assets/team-harry-honig.jpeg";
 import luciaAdamsPhoto from "@/assets/team-lucia-adams.jpg";
-import marisaMartignonPhoto from "@/assets/team-marisa-martignon.jpg";
 import devanshBhallaPhoto from "@/assets/team-devansh-bhalla.jpg";
-import mukilSivaPhoto from "@/assets/team-mukil-siva.png";
 import rishiShahPhoto from "@/assets/team-rishi-shah.jpg";
+import christopherHuangPhoto from "@/assets/team-christopher-huang.jpg";
+import arunButteyPhoto from "@/assets/arun-b.png";
 const LinkedInIcon = ({
   className
 }: {
@@ -61,16 +61,16 @@ const teamMembers: {
   photo: devanshBhallaPhoto
 }, {
   title: "Head of Education",
-  name: "Marisa Martignon",
-  bio: "I'm Marisa \"Risa\" Martignon, a junior from Italy. At STEMise, I help design and approve the curriculum, drawing on experience from robotics coaching and tutoring. I enjoy building lessons that feel approachable yet challenging, encouraging curiosity and problem-solving. I've fenced since I was 7, I'm an energy drink connoisseur, and I'm passionate about cognitive science, maths, and education.",
-  linkedin: "",
-  photo: marisaMartignonPhoto
+  name: "Christopher Huang",
+  bio: "Hi! I'm Christopher Huang, the Head of Education at STEMise. I'm a sophomore at Heritage High and am passionate about healthcare strategy and academic rigor. At STEMise, I lead our global curriculum design, drawing on my background as a SAT tutor and FBLA state finalist. I'm a water polo player, a theatre enthusiast, and I'm dedicated to bridging STEM access gaps for students worldwide!",
+  linkedin: "https://www.linkedin.com/in/christopher-h878/",
+  photo: christopherHuangPhoto
 }, {
-  title: "Head of Outreach",
-  name: "Mukil Siva",
-  bio: "Hey! I'm Mukil, the Head of Outreach at STEMise. I'm passionate about making STEM education engaging and accessible for students worldwide, with a strong interest in biotechnology and emerging technologies like AI. Through outreach, I work to connect communities, expand STEMise's impact, and inspire curiosity, innovation, and lifelong learning in STEM.",
-  linkedin: "https://www.linkedin.com/in/mukil-siva-b6210336a",
-  photo: mukilSivaPhoto
+  title: "Director of Outreach",
+  name: "Arun Buttey",
+  bio: "Hey!! I am Arun, the Director of Outreach at STEMise. I felt a strong connection with STEMise's work and hence became passionate about making it available and accessible to students worldwide. I have interests in multiple areas, like music, astrophysics, and chess. Through outreach, I hope to increase the reach and impact of STEMise, and foster creativity in students.",
+  linkedin: "",
+  photo: arunButteyPhoto
 }, {
   title: "Head of Finances",
   name: "Rishi Shah",
