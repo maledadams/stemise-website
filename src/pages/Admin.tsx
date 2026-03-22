@@ -270,7 +270,7 @@ type WorldGeoJson = {
 const Admin = () => {
   const queryClient = useQueryClient();
   const { data } = useAllSiteContentQuery();
-  const { session, isLoading: authLoading } = useAdminAuth();
+  const { session, isAdmin, isLoading: authLoading } = useAdminAuth();
   const [content, setContent] = useState<SiteContentMap>(() => cloneValue(data));
   const [authPending, setAuthPending] = useState(false);
   const [email, setEmail] = useState("");
@@ -593,6 +593,37 @@ const Admin = () => {
                 <Button onClick={handleSendMagicLink} disabled={authPending || !email} className="w-full">
                   {authPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
                   Send magic link
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Seo title="Admin" pathname="/admin" noIndex />
+        <Header />
+        <main className="section-shell">
+          <div className="container">
+            <Card className="mx-auto max-w-xl rounded-[2rem] border-2 border-foreground bg-white">
+              <CardHeader>
+                <div className="inline-flex w-fit rounded-full border-2 border-foreground bg-[#fff4a8] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]">
+                  Admin
+                </div>
+                <CardTitle className="mt-4 text-4xl">This account is not on the admin allowlist.</CardTitle>
+                <CardDescription className="text-base leading-7">
+                  Add this email to `public.admin_allowlist` in Supabase, then sign in again.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button variant="outline" onClick={handleSignOut}>
+                  <LogOut className="h-4 w-4" />
+                  Sign out
                 </Button>
               </CardContent>
             </Card>

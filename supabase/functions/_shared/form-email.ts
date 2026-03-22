@@ -1,6 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-
-interface FormSubmission {
+export interface FormSubmission {
   id: string;
   form_type: "contact" | "kit_request";
   email: string;
@@ -50,6 +48,7 @@ const buildEmailShell = ({
           ${intro}
         </div>
       </div>
+
       <div style="padding:0 32px 32px 32px;">
         ${body}
         <div style="margin-top:24px;padding-top:20px;border-top:2px solid #16203b;color:#5d6987;font-size:13px;line-height:1.7;">
@@ -86,6 +85,7 @@ const buildContactEmail = (record: FormSubmission) =>
           ${detailRow("Submitted", escapeHtml(new Date(record.created_at).toLocaleString()))}
         </table>
       </div>
+
       <div style="margin-top:20px;border:2px solid #16203b;border-radius:24px;background:#ffffff;padding:22px;">
         <div style="font-size:13px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#3f4e72;">Message</div>
         <div style="margin-top:12px;font-size:16px;line-height:1.8;color:#16203b;">
@@ -110,6 +110,7 @@ const buildKitRequestEmail = (record: FormSubmission) =>
           ${detailRow("Submitted", escapeHtml(new Date(record.created_at).toLocaleString()))}
         </table>
       </div>
+
       <div style="margin-top:20px;border:2px solid #16203b;border-radius:24px;background:#ffffff;padding:22px;">
         <div style="font-size:13px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#3f4e72;">Request details</div>
         <div style="margin-top:12px;font-size:16px;line-height:1.8;color:#16203b;">
@@ -119,7 +120,7 @@ const buildKitRequestEmail = (record: FormSubmission) =>
     `,
   });
 
-const buildEmailForSubmission = (record: FormSubmission) => {
+export const buildEmailForSubmission = (record: FormSubmission) => {
   const subject =
     record.form_type === "contact"
       ? `New contact message from ${record.name || record.email}`
@@ -132,75 +133,3 @@ const buildEmailForSubmission = (record: FormSubmission) => {
 
   return { subject, html };
 };
-
-const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
-const TARGET_EMAIL = Deno.env.get("TARGET_EMAIL") || "officialstemise@gmail.com";
-const RESEND_FROM_EMAIL = Deno.env.get("RESEND_FROM_EMAIL") || "onboarding@resend.dev";
-const RESEND_FROM_NAME = Deno.env.get("RESEND_FROM_NAME") || "STEMise";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
-
-  try {
-    const { record } = (await req.json()) as { record?: FormSubmission };
-
-    if (!record || !["contact", "kit_request"].includes(record.form_type)) {
-      return new Response(JSON.stringify({ error: "Unsupported form payload." }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (!RESEND_API_KEY) {
-      return new Response(JSON.stringify({ error: "RESEND_API_KEY is not configured." }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const { subject, html } = buildEmailForSubmission(record);
-
-    const resendResponse = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-      },
-      body: JSON.stringify({
-        from: `${RESEND_FROM_NAME} <${RESEND_FROM_EMAIL}>`,
-        to: [TARGET_EMAIL],
-        reply_to: record.email,
-        subject,
-        html,
-      }),
-    });
-
-    const resendData = await resendResponse.json();
-
-    if (!resendResponse.ok) {
-      console.error("Resend API error:", resendData);
-      return new Response(JSON.stringify({ error: "Failed to send email", details: resendData }), {
-        status: resendResponse.status,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    return new Response(JSON.stringify({ success: true, data: resendData }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (error) {
-    console.error("Error sending form email:", error);
-    return new Response(JSON.stringify({ error: "Internal server error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-});

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import TurnstileWidget from "@/components/TurnstileWidget";
 import { submitContactMessage } from "@/lib/formService";
 import { useToast } from "@/hooks/use-toast";
 import contactHero from "@/assets/contact-hero.jpg";
@@ -16,6 +17,8 @@ const Contact = () => {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaResetSignal, setCaptchaResetSignal] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
 
@@ -30,9 +33,20 @@ const Contact = () => {
       return;
     }
 
+    if (!captchaToken) {
+      toast({
+        title: "Complete the security check",
+        description: "Please verify the security check before sending your message.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsSubmitting(true);
-    const result = await submitContactMessage({ name, email, message });
+    const result = await submitContactMessage({ name, email, message, captchaToken });
     setIsSubmitting(false);
+    setCaptchaToken("");
+    setCaptchaResetSignal((current) => current + 1);
 
     if (result.success) {
       toast({
@@ -117,14 +131,20 @@ const Contact = () => {
                       placeholder="Your email"
                       required
                     />
-                    <Textarea
-                      value={message}
-                      onChange={(event) => setMessage(event.target.value)}
-                      placeholder="Your message"
-                      className="min-h-[160px]"
-                      required
-                    />
-                    <Button type="submit" className="w-full" disabled={isSubmitting}>
+                      <Textarea
+                        value={message}
+                        onChange={(event) => setMessage(event.target.value)}
+                        placeholder="Your message"
+                        className="min-h-[160px]"
+                        required
+                      />
+                      <TurnstileWidget
+                        onVerify={setCaptchaToken}
+                        onExpire={() => setCaptchaToken("")}
+                        onError={() => setCaptchaToken("")}
+                        resetSignal={captchaResetSignal}
+                      />
+                    <Button type="submit" className="w-full" disabled={isSubmitting || !captchaToken}>
                       <Send className="h-4 w-4" />
                       {isSubmitting ? "Sending..." : "Send message"}
                     </Button>

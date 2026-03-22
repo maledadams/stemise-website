@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
 interface FormSubmission {
   id: string;
@@ -137,10 +138,103 @@ const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const TARGET_EMAIL = Deno.env.get("TARGET_EMAIL") || "officialstemise@gmail.com";
 const RESEND_FROM_EMAIL = Deno.env.get("RESEND_FROM_EMAIL") || "onboarding@resend.dev";
 const RESEND_FROM_NAME = Deno.env.get("RESEND_FROM_NAME") || "STEMise";
+const TURNSTILE_SECRET_KEY = Deno.env.get("TURNSTILE_SECRET_KEY");
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+type SubmitFormPayload = {
+  form_type: "contact" | "kit_request";
+  email: string;
+  name: string;
+  organization_name?: string | null;
+  message: string;
+  captcha_token: string;
+};
+
+const badRequest = (error: string, status = 400) =>
+  new Response(JSON.stringify({ success: false, error }), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+
+const getRemoteIp = (req: Request) => {
+  const forwardedFor = req.headers.get("x-forwarded-for");
+  if (forwardedFor) {
+    return forwardedFor.split(",")[0]?.trim() || undefined;
+  }
+
+  return req.headers.get("x-real-ip") || undefined;
+};
+
+const verifyTurnstile = async (token: string, remoteIp?: string) => {
+  if (!TURNSTILE_SECRET_KEY) {
+    return { success: false, error: "TURNSTILE_SECRET_KEY is not configured." };
+  }
+
+  const formData = new FormData();
+  formData.set("secret", TURNSTILE_SECRET_KEY);
+  formData.set("response", token);
+
+  if (remoteIp) {
+    formData.set("remoteip", remoteIp);
+  }
+
+  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    body: formData,
+  });
+
+  const result = await response.json();
+  if (!response.ok || !result.success) {
+    return {
+      success: false,
+      error: "Security check failed. Please try again.",
+      details: result,
+    };
+  }
+
+  return { success: true };
+};
+
+const sendResendEmail = async (record: FormSubmission) => {
+  if (!RESEND_API_KEY) {
+    return { success: false, error: "RESEND_API_KEY is not configured." };
+  }
+
+  const { subject, html } = buildEmailForSubmission(record);
+
+  const resendResponse = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+    },
+    body: JSON.stringify({
+      from: `${RESEND_FROM_NAME} <${RESEND_FROM_EMAIL}>`,
+      to: [TARGET_EMAIL],
+      reply_to: record.email,
+      subject,
+      html,
+    }),
+  });
+
+  const resendData = await resendResponse.json();
+  if (!resendResponse.ok) {
+    return {
+      success: false,
+      error: "Failed to send notification email.",
+      details: resendData,
+      status: resendResponse.status,
+    };
+  }
+
+  return { success: true, data: resendData };
 };
 
 serve(async (req) => {
@@ -149,58 +243,83 @@ serve(async (req) => {
   }
 
   try {
-    const { record } = (await req.json()) as { record?: FormSubmission };
-
-    if (!record || !["contact", "kit_request"].includes(record.form_type)) {
-      return new Response(JSON.stringify({ error: "Unsupported form payload." }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      return badRequest("Supabase server credentials are not configured.", 500);
     }
 
-    if (!RESEND_API_KEY) {
-      return new Response(JSON.stringify({ error: "RESEND_API_KEY is not configured." }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const payload = (await req.json()) as Partial<SubmitFormPayload>;
+    const formType = payload.form_type;
+
+    if (formType !== "contact" && formType !== "kit_request") {
+      return badRequest("Unsupported form type.");
     }
 
-    const { subject, html } = buildEmailForSubmission(record);
+    if (!payload.captcha_token) {
+      return badRequest("Please complete the security check.");
+    }
 
-    const resendResponse = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${RESEND_API_KEY}`,
+    const turnstileResult = await verifyTurnstile(payload.captcha_token, getRemoteIp(req));
+    if (!turnstileResult.success) {
+      console.error("Turnstile verification failed:", turnstileResult);
+      return badRequest(turnstileResult.error, 400);
+    }
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
       },
-      body: JSON.stringify({
-        from: `${RESEND_FROM_NAME} <${RESEND_FROM_EMAIL}>`,
-        to: [TARGET_EMAIL],
-        reply_to: record.email,
-        subject,
-        html,
-      }),
     });
 
-    const resendData = await resendResponse.json();
+    const { data: insertedRecord, error: submissionError } = await supabase.rpc(
+      "submit_public_form_submission",
+      {
+        p_form_type: formType,
+        p_email: payload.email ?? "",
+        p_name: payload.name ?? "",
+        p_organization_name: payload.organization_name ?? null,
+        p_message: payload.message ?? "",
+      },
+    );
 
-    if (!resendResponse.ok) {
-      console.error("Resend API error:", resendData);
-      return new Response(JSON.stringify({ error: "Failed to send email", details: resendData }), {
-        status: resendResponse.status,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (submissionError) {
+      console.error("Form submission RPC failed:", submissionError);
+      return badRequest(submissionError.message, 400);
     }
 
-    return new Response(JSON.stringify({ success: true, data: resendData }), {
+    const record = insertedRecord as FormSubmission;
+    const emailResult = await sendResendEmail(record);
+
+    if (!emailResult.success) {
+      console.error("Notification email failed:", emailResult);
+
+      if (SUPABASE_SERVICE_ROLE_KEY) {
+        const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+          },
+        });
+
+        const { error: cleanupError } = await serviceClient
+          .from("form_submissions")
+          .delete()
+          .eq("id", record.id);
+
+        if (cleanupError) {
+          console.error("Failed to remove queued submission after email failure:", cleanupError);
+        }
+      }
+
+      return badRequest("We could not complete the submission. Please try again.", 502);
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Error sending form email:", error);
-    return new Response(JSON.stringify({ error: "Internal server error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.error("Error handling form submission:", error);
+    return badRequest("Internal server error.", 500);
   }
 });

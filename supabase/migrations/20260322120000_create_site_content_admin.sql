@@ -17,6 +17,30 @@ create table if not exists public.site_content_state (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+create table if not exists public.admin_allowlist (
+  email text primary key,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+alter table public.admin_allowlist enable row level security;
+
+create or replace function public.current_user_is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.admin_allowlist
+    where email = lower(trim(coalesce(auth.jwt() ->> 'email', '')))
+  );
+$$;
+
+revoke all on function public.current_user_is_admin() from public;
+grant execute on function public.current_user_is_admin() to authenticated;
+
 drop trigger if exists site_content_state_set_updated_at on public.site_content_state;
 create trigger site_content_state_set_updated_at
 before update on public.site_content_state
@@ -32,11 +56,12 @@ for select
 using (true);
 
 drop policy if exists "Authenticated manage site content state" on public.site_content_state;
-create policy "Authenticated manage site content state"
+drop policy if exists "Admin allowlist manage site content state" on public.site_content_state;
+create policy "Admin allowlist manage site content state"
 on public.site_content_state
 for all
-using (auth.role() = 'authenticated')
-with check (auth.role() = 'authenticated');
+using (public.current_user_is_admin())
+with check (public.current_user_is_admin());
 
 insert into public.site_content_state (id, payload)
 values (1, '{}'::jsonb)
@@ -56,10 +81,11 @@ alter table public.form_submissions enable row level security;
 
 drop policy if exists "Anyone can insert form submissions" on public.form_submissions;
 drop policy if exists "Authenticated can read form submissions" on public.form_submissions;
-create policy "Authenticated can read form submissions"
+drop policy if exists "Admin allowlist can read form submissions" on public.form_submissions;
+create policy "Admin allowlist can read form submissions"
 on public.form_submissions
 for select
-using (auth.role() = 'authenticated');
+using (public.current_user_is_admin());
 
 create index if not exists form_submissions_form_type_idx
 on public.form_submissions (form_type);
@@ -155,32 +181,35 @@ for select
 using (bucket_id = 'site-assets');
 
 drop policy if exists "Authenticated upload site assets" on storage.objects;
-create policy "Authenticated upload site assets"
+drop policy if exists "Admin allowlist upload site assets" on storage.objects;
+create policy "Admin allowlist upload site assets"
 on storage.objects
 for insert
 with check (
   bucket_id = 'site-assets'
-  and auth.role() = 'authenticated'
+  and public.current_user_is_admin()
 );
 
 drop policy if exists "Authenticated update site assets" on storage.objects;
-create policy "Authenticated update site assets"
+drop policy if exists "Admin allowlist update site assets" on storage.objects;
+create policy "Admin allowlist update site assets"
 on storage.objects
 for update
 using (
   bucket_id = 'site-assets'
-  and auth.role() = 'authenticated'
+  and public.current_user_is_admin()
 )
 with check (
   bucket_id = 'site-assets'
-  and auth.role() = 'authenticated'
+  and public.current_user_is_admin()
 );
 
 drop policy if exists "Authenticated delete site assets" on storage.objects;
-create policy "Authenticated delete site assets"
+drop policy if exists "Admin allowlist delete site assets" on storage.objects;
+create policy "Admin allowlist delete site assets"
 on storage.objects
 for delete
 using (
   bucket_id = 'site-assets'
-  and auth.role() = 'authenticated'
+  and public.current_user_is_admin()
 );

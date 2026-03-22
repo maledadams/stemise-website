@@ -6,8 +6,8 @@ const supabaseNotConfiguredError = {
 };
 
 type StoredFormSubmission = {
-    id: string;
-    form_type: 'contact' | 'kit_request';
+  id: string;
+  form_type: 'contact' | 'kit_request';
     email: string;
     name: string;
     organization_name?: string | null;
@@ -82,25 +82,30 @@ interface ContactData {
     name: string;
     email: string;
     message: string;
+    captchaToken: string;
 }
 
-async function submitPublicFormSubmission(data: {
+async function submitProtectedFormSubmission(data: {
     formType: 'contact' | 'kit_request';
     email: string;
     name: string;
     organizationName?: string | null;
     message: string;
+    captchaToken: string;
 }): Promise<{ success: boolean; error?: string; record?: StoredFormSubmission }> {
     if (!supabase) {
         return supabaseNotConfiguredError;
     }
 
-    const { data: record, error } = await supabase.rpc('submit_public_form_submission', {
-        p_form_type: data.formType,
-        p_email: data.email,
-        p_name: data.name,
-        p_organization_name: data.organizationName ?? null,
-        p_message: data.message,
+    const { data: response, error } = await supabase.functions.invoke('submit-form', {
+        body: {
+            form_type: data.formType,
+            email: data.email,
+            name: data.name,
+            organization_name: data.organizationName ?? null,
+            message: data.message,
+            captcha_token: data.captchaToken,
+        },
     });
 
     if (error) {
@@ -108,21 +113,11 @@ async function submitPublicFormSubmission(data: {
         return { success: false, error: error.message };
     }
 
-    return { success: true, record };
-}
-
-async function notifyFormSubmission(record: StoredFormSubmission): Promise<void> {
-    if (!supabase) {
-        return;
+    if (!response?.success) {
+        return { success: false, error: response?.error || 'Please try again later.' };
     }
 
-    const { error } = await supabase.functions.invoke('send-form-email', {
-        body: { record },
-    });
-
-    if (error) {
-        throw error;
-    }
+    return { success: true, record: response.record };
 }
 
 /**
@@ -192,20 +187,13 @@ export async function submitContactMessage(data: ContactData): Promise<{ success
     if (!rateLimit.allowed) {
         return { success: false, error: rateLimit.error };
     }
-    const result = await submitPublicFormSubmission({
+    const result = await submitProtectedFormSubmission({
         formType: 'contact',
         email: data.email,
         name: data.name,
         message: data.message,
+        captchaToken: data.captchaToken,
     });
-
-    if (result.success && result.record) {
-        try {
-            await notifyFormSubmission(result.record);
-        } catch (error) {
-            console.warn('Contact email notification failed:', error);
-        }
-    }
 
     return { success: result.success, error: result.error };
 }
@@ -215,6 +203,7 @@ interface KitRequestData {
     email: string;
     organization: string;
     message: string;
+    captchaToken: string;
     kits: Array<{ name: string; quantity: number }>;
 }
 
@@ -231,21 +220,14 @@ export async function submitKitRequest(data: KitRequestData): Promise<{ success:
     }
     const kitsDescription = data.kits.map(k => `${k.name} x${k.quantity}`).join(', ');
 
-    const result = await submitPublicFormSubmission({
+    const result = await submitProtectedFormSubmission({
         formType: 'kit_request',
         email: data.email,
         name: data.name,
         organizationName: data.organization,
         message: `KITS REQUESTED: ${kitsDescription}\n\nMESSAGE: ${data.message}`,
+        captchaToken: data.captchaToken,
     });
-
-    if (result.success && result.record) {
-        try {
-            await notifyFormSubmission(result.record);
-        } catch (error) {
-            console.warn('Kit request email notification failed:', error);
-        }
-    }
 
     return { success: result.success, error: result.error };
 }

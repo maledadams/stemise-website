@@ -9,6 +9,7 @@ const ADMIN_RETURN_TO_KEY = "stemise:admin:return_to";
 type AdminAuthContextValue = {
   session: Session | null;
   isLoading: boolean;
+  isAdmin: boolean;
   isAuthenticated: boolean;
   rememberReturnPath: (path: string) => void;
   getRememberedReturnPath: () => string;
@@ -55,6 +56,7 @@ const rememberAdminReturnPath = (path: string) => {
 
 export const AdminAuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -70,6 +72,7 @@ export const AdminAuthProvider = ({ children }: { children: React.ReactNode }) =
         clearSessionStartedAt();
         if (!cancelled) {
           setSession(null);
+          setIsAdmin(false);
           setIsLoading(false);
         }
         return;
@@ -86,8 +89,19 @@ export const AdminAuthProvider = ({ children }: { children: React.ReactNode }) =
         return;
       }
 
+      const { data: nextIsAdmin, error } = await supabase.rpc("current_user_is_admin");
+      if (error) {
+        if (!cancelled) {
+          setSession(nextSession);
+          setIsAdmin(false);
+          setIsLoading(false);
+        }
+        return;
+      }
+
       if (!cancelled) {
         setSession(nextSession);
+        setIsAdmin(Boolean(nextIsAdmin));
         setIsLoading(false);
       }
     };
@@ -124,11 +138,12 @@ export const AdminAuthProvider = ({ children }: { children: React.ReactNode }) =
     () => ({
       session,
       isLoading,
-      isAuthenticated: Boolean(session),
+      isAdmin,
+      isAuthenticated: Boolean(session && isAdmin),
       rememberReturnPath: rememberAdminReturnPath,
       getRememberedReturnPath: getRememberedAdminReturnPath,
     }),
-    [isLoading, session],
+    [isAdmin, isLoading, session],
   );
 
   return <AdminAuthContext.Provider value={value}>{children}</AdminAuthContext.Provider>;

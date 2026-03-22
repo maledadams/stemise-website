@@ -11,6 +11,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import Seo from "@/components/Seo";
 import HeroShapes from "@/components/HeroShapes";
+import TurnstileWidget from "@/components/TurnstileWidget";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -42,6 +43,8 @@ const Kits = () => {
   const [requesterEmail, setRequesterEmail] = useState("");
   const [organization, setOrganization] = useState("");
   const [emailError, setEmailError] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaResetSignal, setCaptchaResetSignal] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const requestSectionRef = useRef<HTMLDivElement>(null);
@@ -125,6 +128,15 @@ const Kits = () => {
       return;
     }
 
+    if (!captchaToken) {
+      toast({
+        title: "Complete the security check",
+        description: "Please verify the security check before sending your request.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setShowConfirmDialog(true);
   };
 
@@ -136,6 +148,7 @@ const Kits = () => {
       email: requesterEmail,
       organization,
       message,
+      captchaToken,
       kits: selectedKits.map((kit) => ({
         name: kit.name,
         quantity: kit.quantity,
@@ -144,6 +157,8 @@ const Kits = () => {
 
     setIsSending(false);
     setShowConfirmDialog(false);
+    setCaptchaToken("");
+    setCaptchaResetSignal((current) => current + 1);
 
     if (result.success) {
       toast({
@@ -359,9 +374,15 @@ const Kits = () => {
                           onChange={(event) => setMessage(event.target.value)}
                           className="min-h-[120px]"
                         />
+                        <TurnstileWidget
+                          onVerify={setCaptchaToken}
+                          onExpire={() => setCaptchaToken("")}
+                          onError={() => setCaptchaToken("")}
+                          resetSignal={captchaResetSignal}
+                        />
                         <Button
                           onClick={handleSubmitRequest}
-                          disabled={selectedKits.length === 0}
+                          disabled={selectedKits.length === 0 || !captchaToken}
                           className="w-full"
                         >
                           <Send className="h-4 w-4" />
@@ -456,7 +477,7 @@ const Kits = () => {
               <Button variant="outline" onClick={() => setShowConfirmDialog(false)}>
                 Cancel
               </Button>
-              <Button onClick={sendRequest} disabled={isSending}>
+              <Button onClick={sendRequest} disabled={isSending || !captchaToken}>
                 {isSending ? "Sending..." : "Confirm and send"}
               </Button>
             </DialogFooter>
