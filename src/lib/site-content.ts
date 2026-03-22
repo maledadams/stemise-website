@@ -51,8 +51,72 @@ type SiteContentStateRow = {
 
 const SITE_CONTENT_ROW_ID = 1;
 const SITE_ASSET_PUBLIC_SEGMENT = "/storage/v1/object/public/site-assets/";
+const OPTIMIZABLE_IMAGE_TYPES = new Set(["image/jpeg", "image/png"]);
+const MAX_UPLOAD_IMAGE_DIMENSION = 2200;
+const MAX_UPLOAD_IMAGE_BYTES = 1.5 * 1024 * 1024;
+const JPEG_UPLOAD_QUALITY = 0.82;
 
 const cloneValue = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+const optimizeImageForUpload = async (file: File): Promise<File> => {
+  if (
+    typeof window === "undefined" ||
+    typeof createImageBitmap !== "function" ||
+    !OPTIMIZABLE_IMAGE_TYPES.has(file.type)
+  ) {
+    return file;
+  }
+
+  let bitmap: ImageBitmap | null = null;
+
+  try {
+    bitmap = await createImageBitmap(file);
+    const longestSide = Math.max(bitmap.width, bitmap.height);
+    const shouldResize = longestSide > MAX_UPLOAD_IMAGE_DIMENSION;
+    const shouldCompress = file.size > MAX_UPLOAD_IMAGE_BYTES;
+
+    if (!shouldResize && !shouldCompress) {
+      return file;
+    }
+
+    const scale = shouldResize ? MAX_UPLOAD_IMAGE_DIMENSION / longestSide : 1;
+    const targetWidth = Math.max(1, Math.round(bitmap.width * scale));
+    const targetHeight = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      return file;
+    }
+
+    context.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
+
+    const optimizedBlob = await new Promise<Blob | null>((resolve) => {
+      if (file.type === "image/jpeg") {
+        canvas.toBlob(resolve, "image/jpeg", JPEG_UPLOAD_QUALITY);
+        return;
+      }
+
+      canvas.toBlob(resolve, "image/png");
+    });
+
+    if (!optimizedBlob || optimizedBlob.size >= file.size) {
+      return file;
+    }
+
+    return new File([optimizedBlob], file.name, {
+      type: optimizedBlob.type || file.type,
+      lastModified: file.lastModified,
+    });
+  } catch {
+    return file;
+  } finally {
+    bitmap?.close();
+  }
+};
 
 const fallbackEventAssetMap = new Map(
   homeLiveEvents.map((event) => [
@@ -395,13 +459,14 @@ export const uploadSiteAsset = async (file: File, folder: string): Promise<strin
     throw new Error("Supabase is not configured.");
   }
 
+  const uploadFile = await optimizeImageForUpload(file);
   const safeFolder = folder.replace(/[^a-z0-9/-]/gi, "-").toLowerCase();
-  const fileExt = file.name.split(".").pop() || "png";
+  const fileExt = uploadFile.name.split(".").pop() || "png";
   const filePath = `${safeFolder}/${crypto.randomUUID()}.${fileExt}`;
 
   const { error: uploadError } = await supabase.storage
     .from("site-assets")
-    .upload(filePath, file, {
+    .upload(filePath, uploadFile, {
       cacheControl: "3600",
       upsert: false,
     });

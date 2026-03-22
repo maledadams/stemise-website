@@ -167,7 +167,7 @@ const AssetField = ({
     <div className="flex flex-wrap items-center gap-3">
       <Input
         type="file"
-        accept="image/*"
+        accept=".png,.PNG,.jpg,.JPG,.jpeg,.JPEG,image/png,image/jpeg"
         className="max-w-sm"
         disabled={uploading}
         onChange={async (event) => {
@@ -185,7 +185,7 @@ const AssetField = ({
       ) : (
         <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
           <Upload className="h-4 w-4" />
-          Upload to Supabase
+          Upload JPG, JPEG, or PNG to Supabase
         </div>
       )}
     </div>
