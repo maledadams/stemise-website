@@ -52,13 +52,20 @@ type SiteContentStateRow = {
 const SITE_CONTENT_ROW_ID = 1;
 const SITE_ASSET_PUBLIC_SEGMENT = "/storage/v1/object/public/site-assets/";
 const OPTIMIZABLE_IMAGE_TYPES = new Set(["image/jpeg", "image/png"]);
-const MAX_UPLOAD_IMAGE_DIMENSION = 2200;
-const MAX_UPLOAD_IMAGE_BYTES = 1.5 * 1024 * 1024;
-const JPEG_UPLOAD_QUALITY = 0.82;
+const DEFAULT_MAX_UPLOAD_IMAGE_DIMENSION = 1800;
+const DEFAULT_MAX_UPLOAD_IMAGE_BYTES = 1.1 * 1024 * 1024;
+const TEAM_MAX_UPLOAD_IMAGE_DIMENSION = 1400;
+const TEAM_MAX_UPLOAD_IMAGE_BYTES = 700 * 1024;
+const JPEG_UPLOAD_QUALITY = 0.76;
+const IMAGE_OPTIMIZATION_TIMEOUT_MS = 12_000;
+const STORAGE_UPLOAD_TIMEOUT_MS = 45_000;
 
 const cloneValue = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
-const optimizeImageForUpload = async (file: File): Promise<File> => {
+const replaceFileExtension = (fileName: string, nextExtension: string) =>
+  fileName.replace(/\.[^.]+$/, "") + nextExtension;
+
+const optimizeImageForUpload = async (file: File, folder: string): Promise<File> => {
   if (
     typeof window === "undefined" ||
     typeof createImageBitmap !== "function" ||
@@ -67,54 +74,77 @@ const optimizeImageForUpload = async (file: File): Promise<File> => {
     return file;
   }
 
-  let bitmap: ImageBitmap | null = null;
+  const maxDimension =
+    folder === "team" ? TEAM_MAX_UPLOAD_IMAGE_DIMENSION : DEFAULT_MAX_UPLOAD_IMAGE_DIMENSION;
+  const maxBytes = folder === "team" ? TEAM_MAX_UPLOAD_IMAGE_BYTES : DEFAULT_MAX_UPLOAD_IMAGE_BYTES;
 
-  try {
-    bitmap = await createImageBitmap(file);
-    const longestSide = Math.max(bitmap.width, bitmap.height);
-    const shouldResize = longestSide > MAX_UPLOAD_IMAGE_DIMENSION;
-    const shouldCompress = file.size > MAX_UPLOAD_IMAGE_BYTES;
+  const optimizationPromise = (async () => {
+    let bitmap: ImageBitmap | null = null;
 
-    if (!shouldResize && !shouldCompress) {
-      return file;
-    }
+    try {
+      bitmap = await createImageBitmap(file);
+      const longestSide = Math.max(bitmap.width, bitmap.height);
+      const shouldResize = longestSide > maxDimension;
+      const shouldCompress = file.size > maxBytes;
 
-    const scale = shouldResize ? MAX_UPLOAD_IMAGE_DIMENSION / longestSide : 1;
-    const targetWidth = Math.max(1, Math.round(bitmap.width * scale));
-    const targetHeight = Math.max(1, Math.round(bitmap.height * scale));
-    const canvas = document.createElement("canvas");
-
-    canvas.width = targetWidth;
-    canvas.height = targetHeight;
-
-    const context = canvas.getContext("2d");
-    if (!context) {
-      return file;
-    }
-
-    context.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
-
-    const optimizedBlob = await new Promise<Blob | null>((resolve) => {
-      if (file.type === "image/jpeg") {
-        canvas.toBlob(resolve, "image/jpeg", JPEG_UPLOAD_QUALITY);
-        return;
+      if (!shouldResize && !shouldCompress) {
+        return file;
       }
 
-      canvas.toBlob(resolve, "image/png");
-    });
+      const scale = shouldResize ? maxDimension / longestSide : 1;
+      const targetWidth = Math.max(1, Math.round(bitmap.width * scale));
+      const targetHeight = Math.max(1, Math.round(bitmap.height * scale));
+      const canvas = document.createElement("canvas");
 
-    if (!optimizedBlob || optimizedBlob.size >= file.size) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+
+      const context = canvas.getContext("2d");
+      if (!context) {
+        return file;
+      }
+
+      context.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
+
+      const nextMimeType =
+        folder === "team" || file.type === "image/jpeg" ? "image/jpeg" : "image/png";
+      const nextFileName = nextMimeType === "image/jpeg"
+        ? replaceFileExtension(file.name, ".jpg")
+        : replaceFileExtension(file.name, ".png");
+
+      const optimizedBlob = await new Promise<Blob | null>((resolve) => {
+        if (nextMimeType === "image/jpeg") {
+          canvas.toBlob(resolve, "image/jpeg", JPEG_UPLOAD_QUALITY);
+          return;
+        }
+
+        canvas.toBlob(resolve, "image/png");
+      });
+
+      if (!optimizedBlob || optimizedBlob.size >= file.size) {
+        return file;
+      }
+
+      return new File([optimizedBlob], nextFileName, {
+        type: optimizedBlob.type || nextMimeType,
+        lastModified: file.lastModified,
+      });
+    } catch {
       return file;
+    } finally {
+      bitmap?.close();
     }
+  })();
 
-    return new File([optimizedBlob], file.name, {
-      type: optimizedBlob.type || file.type,
-      lastModified: file.lastModified,
-    });
+  try {
+    return await Promise.race([
+      optimizationPromise,
+      new Promise<File>((resolve) => {
+        window.setTimeout(() => resolve(file), IMAGE_OPTIMIZATION_TIMEOUT_MS);
+      }),
+    ]);
   } catch {
     return file;
-  } finally {
-    bitmap?.close();
   }
 };
 
@@ -459,17 +489,27 @@ export const uploadSiteAsset = async (file: File, folder: string): Promise<strin
     throw new Error("Supabase is not configured.");
   }
 
-  const uploadFile = await optimizeImageForUpload(file);
+  const uploadFile = await optimizeImageForUpload(file, folder);
   const safeFolder = folder.replace(/[^a-z0-9/-]/gi, "-").toLowerCase();
   const fileExt = uploadFile.name.split(".").pop() || "png";
   const filePath = `${safeFolder}/${crypto.randomUUID()}.${fileExt}`;
 
-  const { error: uploadError } = await supabase.storage
-    .from("site-assets")
-    .upload(filePath, uploadFile, {
-      cacheControl: "3600",
-      upsert: false,
-    });
+  const uploadResult = await Promise.race([
+    supabase.storage
+      .from("site-assets")
+      .upload(filePath, uploadFile, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: uploadFile.type || file.type || undefined,
+      }),
+    new Promise<never>((_, reject) => {
+      window.setTimeout(() => {
+        reject(new Error("Upload timed out. Please try a smaller image."));
+      }, STORAGE_UPLOAD_TIMEOUT_MS);
+    }),
+  ]);
+
+  const { error: uploadError } = uploadResult;
 
   if (uploadError) {
     throw uploadError;
