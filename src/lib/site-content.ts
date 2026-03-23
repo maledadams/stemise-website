@@ -49,6 +49,10 @@ type SiteContentStateRow = {
   payload: Partial<Record<SiteContentKey, unknown>>;
 };
 
+type SiteContentStateReadOptions = {
+  throwOnError?: boolean;
+};
+
 const SITE_CONTENT_ROW_ID = 1;
 const SITE_ASSET_PUBLIC_SEGMENT = "/storage/v1/object/public/site-assets/";
 const OPTIMIZABLE_IMAGE_TYPES = new Set(["image/jpeg", "image/png"]);
@@ -413,11 +417,11 @@ const normalizeSiteContentState = (
   return nextContent;
 };
 
-export const fetchSiteContent = async <K extends SiteContentKey>(
-  key: K,
-): Promise<SiteContentMap[K]> => {
+const fetchSiteContentStateRow = async (
+  options: SiteContentStateReadOptions = {},
+): Promise<SiteContentStateRow | null> => {
   if (!supabase || !isSupabaseConfigured) {
-    return getFallbackSiteContent(key);
+    return null;
   }
 
   const { data, error } = await supabase
@@ -426,7 +430,35 @@ export const fetchSiteContent = async <K extends SiteContentKey>(
     .eq("id", SITE_CONTENT_ROW_ID)
     .maybeSingle<SiteContentStateRow>();
 
-  if (error || !data) {
+  if (error) {
+    console.error("Failed to read site content state:", error);
+    if (options.throwOnError) {
+      throw error;
+    }
+
+    return null;
+  }
+
+  if (!data) {
+    const missingRowError = new Error("The site content state row is missing.");
+    console.error(missingRowError.message);
+    if (options.throwOnError) {
+      throw missingRowError;
+    }
+  }
+
+  return data;
+};
+
+export const fetchSiteContent = async <K extends SiteContentKey>(
+  key: K,
+): Promise<SiteContentMap[K]> => {
+  if (!supabase || !isSupabaseConfigured) {
+    return getFallbackSiteContent(key);
+  }
+
+  const data = await fetchSiteContentStateRow();
+  if (!data) {
     return getFallbackSiteContent(key);
   }
 
@@ -438,13 +470,8 @@ export const fetchAllSiteContent = async (): Promise<SiteContentMap> => {
     return cloneValue(fallbackSiteContent);
   }
 
-  const { data, error } = await supabase
-    .from("site_content_state")
-    .select("id, payload")
-    .eq("id", SITE_CONTENT_ROW_ID)
-    .maybeSingle<SiteContentStateRow>();
-
-  if (error || !data) {
+  const data = await fetchSiteContentStateRow();
+  if (!data) {
     return cloneValue(fallbackSiteContent);
   }
 
@@ -481,6 +508,13 @@ export const saveSiteContent = async <K extends SiteContentKey>(
 
   if (error) {
     throw error;
+  }
+
+  const verifiedState = await fetchSiteContentStateRow({ throwOnError: true });
+  const verifiedPayload = normalizeSiteContentState(verifiedState?.payload);
+
+  if (JSON.stringify(verifiedPayload[key]) !== JSON.stringify(normalizeContentAssets(key, nextPayload[key]))) {
+    throw new Error("Content save could not be verified from Supabase.");
   }
 };
 

@@ -97,7 +97,7 @@ async function submitProtectedFormSubmission(data: {
         return supabaseNotConfiguredError;
     }
 
-    const { data: response, error } = await supabase.functions.invoke('submit-form', {
+    const { data: response, error, response: functionResponse } = await supabase.functions.invoke('submit-form', {
         body: {
             form_type: data.formType,
             email: data.email,
@@ -110,6 +110,25 @@ async function submitProtectedFormSubmission(data: {
 
     if (error) {
         console.error(`${data.formType} submission error:`, error);
+
+        if (functionResponse) {
+            try {
+                const errorPayload = await functionResponse.clone().json();
+                if (errorPayload?.error) {
+                    return { success: false, error: errorPayload.error };
+                }
+            } catch {
+                try {
+                    const errorText = await functionResponse.clone().text();
+                    if (errorText) {
+                        return { success: false, error: errorText };
+                    }
+                } catch {
+                    // Fall through to the generic error message below.
+                }
+            }
+        }
+
         return { success: false, error: error.message };
     }
 

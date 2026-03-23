@@ -195,15 +195,11 @@ const AssetField = ({
 const SectionShell = ({
   title,
   description,
-  onSave,
-  saving,
   onReset,
   children,
 }: {
   title: string;
   description: string;
-  onSave: () => void;
-  saving: boolean;
   onReset: () => void;
   children: React.ReactNode;
 }) => (
@@ -219,10 +215,6 @@ const SectionShell = ({
         <div className="flex flex-wrap gap-3">
           <Button type="button" variant="outline" onClick={onReset}>
             Reset section
-          </Button>
-          <Button type="button" onClick={onSave} disabled={saving}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Save section
           </Button>
         </div>
       </div>
@@ -281,15 +273,7 @@ const Admin = () => {
   const [countrySearch, setCountrySearch] = useState("");
   const [draggedTeamMemberId, setDraggedTeamMemberId] = useState<string | null>(null);
   const [teamDropTargetId, setTeamDropTargetId] = useState<string | null>(null);
-  const [savingSections, setSavingSections] = useState<Record<SiteContentKey, boolean>>({
-    home_events: false,
-    impact_metrics: false,
-    impact_countries: false,
-    kits: false,
-    workshops: false,
-    supporters: false,
-    team_members: false,
-  });
+  const [savingAll, setSavingAll] = useState(false);
   const [uploadingField, setUploadingField] = useState<string | null>(null);
 
   useEffect(() => {
@@ -446,37 +430,70 @@ const Admin = () => {
     }
   };
 
-  const handleSaveSection = async (key: SiteContentKey) => {
-    try {
-      setSavingSections((current) => ({ ...current, [key]: true }));
-      if (key === "impact_metrics") {
-        const nextMetrics = syncCountriesMetric(content.impact_metrics, content.impact_countries);
-        replaceSection("impact_metrics", nextMetrics);
-        await saveSiteContent("impact_metrics", nextMetrics);
-      } else if (key === "impact_countries") {
-        const nextMetrics = syncCountriesMetric(content.impact_metrics, content.impact_countries);
-        replaceSection("impact_metrics", nextMetrics);
-        await saveSiteContent("impact_metrics", nextMetrics);
-        await saveSiteContent("impact_countries", content.impact_countries);
-      } else {
-        await saveSiteContent(key, content[key]);
+  const triggerRedeployAfterSave = async (scope: string) => {
+    if (!supabase) {
+      throw new Error("Supabase is not configured.");
+    }
+
+    const { data, error, response } = await supabase.functions.invoke("trigger-redeploy", {
+      body: {
+        section: scope,
+      },
+      timeout: 20_000,
+    });
+
+    if (error) {
+      if (response) {
+        try {
+          const errorPayload = await response.clone().json();
+          if (errorPayload?.error) {
+            throw new Error(errorPayload.error as string);
+          }
+        } catch {
+          const errorText = await response.clone().text().catch(() => "");
+          if (errorText) {
+            throw new Error(errorText);
+          }
+        }
       }
+
+      throw new Error(error.message);
+    }
+
+    return data;
+  };
+
+  const handleSaveAll = async () => {
+    try {
+      setSavingAll(true);
+      const nextContent: SiteContentMap = {
+        ...content,
+        impact_metrics: syncCountriesMetric(content.impact_metrics, content.impact_countries),
+      };
+
+      setContent(nextContent);
+
+      for (const key of sectionOrder) {
+        await saveSiteContent(key, nextContent[key]);
+      }
+
       await queryClient.invalidateQueries({ queryKey: ["site-content"] });
       const nextAllContent = await fetchAllSiteContent();
       setContent(nextAllContent);
+      await triggerRedeployAfterSave("all");
       toast({
-        title: `${siteContentLabels[key]} saved`,
-        description: "The public site will now read the updated content from Supabase.",
+        title: "All content saved",
+        description: "Everything was saved and a fresh redeploy was triggered.",
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Save failed.";
       toast({
-        title: "Could not save section",
+        title: "Could not save changes",
         description: message,
         variant: "destructive",
       });
     } finally {
-      setSavingSections((current) => ({ ...current, [key]: false }));
+      setSavingAll(false);
     }
   };
 
@@ -676,14 +693,20 @@ const Admin = () => {
                   <CardTitle className="mt-4 text-4xl">Edit live STEMise site content.</CardTitle>
                   <CardDescription className="mt-2 max-w-3xl text-base leading-7">
                     This editor updates the homepage events, impact metrics, world map countries, kits, workshops,
-                    supporters, and team members through Supabase. Every save writes to the public
-                    content store used by the site.
+                    supporters, and team members through Supabase. Make all the edits you need across tabs, then save
+                    once when you are done.
                   </CardDescription>
                 </div>
-                <Button type="button" variant="outline" onClick={handleSignOut}>
-                  <LogOut className="h-4 w-4" />
-                  Sign out
-                </Button>
+                <div className="flex flex-wrap gap-3">
+                  <Button type="button" onClick={handleSaveAll} disabled={savingAll}>
+                    {savingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    Save all changes
+                  </Button>
+                  <Button type="button" variant="outline" onClick={handleSignOut}>
+                    <LogOut className="h-4 w-4" />
+                    Sign out
+                  </Button>
+                </div>
               </div>
             </CardHeader>
           </Card>
@@ -701,8 +724,6 @@ const Admin = () => {
               <SectionShell
                 title="Home events"
                 description="Add or edit the cards shown in the homepage events section. Every event follows the same card template."
-                onSave={() => handleSaveSection("home_events")}
-                saving={savingSections.home_events}
                 onReset={() => handleResetSection("home_events")}
               >
                 <div className="flex justify-end">
@@ -845,8 +866,6 @@ const Admin = () => {
               <SectionShell
                 title="Impact metrics"
                 description="Edit the animated counters used in the homepage impact section."
-                onSave={() => handleSaveSection("impact_metrics")}
-                saving={savingSections.impact_metrics}
                 onReset={() => handleResetSection("impact_metrics")}
               >
                 <div className="flex justify-end">
@@ -929,8 +948,6 @@ const Admin = () => {
               <SectionShell
                 title="World map"
                 description="Click countries to select or deselect them for the homepage globe. The currently highlighted countries are already selected."
-                onSave={() => handleSaveSection("impact_countries")}
-                saving={savingSections.impact_countries}
                 onReset={() => handleResetSection("impact_countries")}
               >
                 <div className="rounded-[1.6rem] border-2 border-foreground bg-[#f7fbff] p-5">
@@ -982,8 +999,6 @@ const Admin = () => {
               <SectionShell
                 title="Kits"
                 description="Manage the kits shown on the Kits page, including availability, audience, materials, and image."
-                onSave={() => handleSaveSection("kits")}
-                saving={savingSections.kits}
                 onReset={() => handleResetSection("kits")}
               >
                 <div className="flex justify-end">
@@ -1109,8 +1124,6 @@ const Admin = () => {
               <SectionShell
                 title="Workshops"
                 description="This replaces the old Google Sheets feed. Workshops saved here appear on the Curriculum page."
-                onSave={() => handleSaveSection("workshops")}
-                saving={savingSections.workshops}
                 onReset={() => handleResetSection("workshops")}
               >
                 <div className="flex justify-end">
@@ -1207,8 +1220,6 @@ const Admin = () => {
               <SectionShell
                 title="Supporters"
                 description="Manage the supporter logos shown in the supporters section, including image and redirect link."
-                onSave={() => handleSaveSection("supporters")}
-                saving={savingSections.supporters}
                 onReset={() => handleResetSection("supporters")}
               >
                 <div className="flex justify-end">
@@ -1289,8 +1300,6 @@ const Admin = () => {
               <SectionShell
                 title="Team members"
                 description="Edit the existing team roster or add new members. Social links are kept to Instagram, LinkedIn, and TikTok."
-                onSave={() => handleSaveSection("team_members")}
-                saving={savingSections.team_members}
                 onReset={() => handleResetSection("team_members")}
               >
                 <div className="flex justify-end">
