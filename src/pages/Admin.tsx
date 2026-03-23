@@ -1303,11 +1303,6 @@ const Admin = () => {
                   {content.team_members.map((member, index) => (
                     <Card
                       key={member.id}
-                      draggable
-                      onDragStart={() => {
-                        setDraggedTeamMemberId(member.id);
-                        setTeamDropTargetId(member.id);
-                      }}
                       onDragOver={(eventValue) => {
                         eventValue.preventDefault();
                         if (teamDropTargetId !== member.id) {
@@ -1332,10 +1327,6 @@ const Admin = () => {
                         setDraggedTeamMemberId(null);
                         setTeamDropTargetId(null);
                       }}
-                      onDragEnd={() => {
-                        setDraggedTeamMemberId(null);
-                        setTeamDropTargetId(null);
-                      }}
                       className={`rounded-[1.8rem] border-2 bg-white transition-colors ${
                         teamDropTargetId === member.id
                           ? "border-primary bg-[#fffef4]"
@@ -1344,7 +1335,18 @@ const Admin = () => {
                     >
                       <CardHeader className="flex flex-row items-start justify-between gap-4">
                         <div className="flex items-start gap-3">
-                          <div className="mt-1 inline-flex items-center gap-2 rounded-full border-2 border-foreground bg-[#fff4a8] px-3 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-foreground">
+                          <div
+                            draggable
+                            onDragStart={() => {
+                              setDraggedTeamMemberId(member.id);
+                              setTeamDropTargetId(member.id);
+                            }}
+                            onDragEnd={() => {
+                              setDraggedTeamMemberId(null);
+                              setTeamDropTargetId(null);
+                            }}
+                            className="mt-1 inline-flex cursor-grab items-center gap-2 rounded-full border-2 border-foreground bg-[#fff4a8] px-3 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-foreground active:cursor-grabbing"
+                          >
                             <GripVertical className="h-4 w-4" />
                             Drag
                           </div>
