@@ -1,9 +1,20 @@
 name: Publish Site Content
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_dispatch:
+    inputs:
+      source:
+        description: Trigger source
+        required: false
+        type: string
+      requested_at:
+        description: Trigger timestamp
+        required: false
+        type: string
+      section:
+        description: Saved admin section scope
+        required: false
+        type: string
 
 concurrency:
   group: publish-site-content
@@ -27,15 +38,15 @@ jobs:
 
       - name: Validate GitHub publisher configuration
         run: |
-          $missing = @()
-          if ([string]::IsNullOrWhiteSpace($env:VITE_SUPABASE_URL)) { $missing += "VITE_SUPABASE_URL" }
-          if ([string]::IsNullOrWhiteSpace($env:VITE_SUPABASE_ANON_KEY)) { $missing += "VITE_SUPABASE_ANON_KEY" }
-          if ([string]::IsNullOrWhiteSpace($env:DEPLOY_HOOK_URL)) { $missing += "DEPLOY_HOOK_URL" }
-          if ($missing.Count -gt 0) {
-            Write-Error ("Missing GitHub Actions configuration: " + ($missing -join ", ") + ". Add them under Settings > Secrets and variables > Actions. Repository-level Secrets are safest. If you used Environment secrets, this workflow needs an environment attached before it can read them.")
+          missing=()
+          [[ -z "$VITE_SUPABASE_URL" ]] && missing+=("VITE_SUPABASE_URL")
+          [[ -z "$VITE_SUPABASE_ANON_KEY" ]] && missing+=("VITE_SUPABASE_ANON_KEY")
+          [[ -z "$DEPLOY_HOOK_URL" ]] && missing+=("DEPLOY_HOOK_URL")
+          if (( ${#missing[@]} > 0 )); then
+            echo "Missing GitHub Actions configuration: ${missing[*]}. Add them under Settings > Secrets and variables > Actions." >&2
             exit 1
-          }
-        shell: pwsh
+          fi
+        shell: bash
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL != '' && secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY != '' && secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}

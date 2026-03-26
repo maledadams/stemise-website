@@ -3,7 +3,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
-const DEPLOY_HOOK_URL = Deno.env.get("DEPLOY_HOOK_URL");
+const GITHUB_ACTIONS_TOKEN = Deno.env.get("GITHUB_ACTIONS_TOKEN");
+const GITHUB_REPO_OWNER = Deno.env.get("GITHUB_REPO_OWNER");
+const GITHUB_REPO_NAME = Deno.env.get("GITHUB_REPO_NAME");
+const GITHUB_WORKFLOW_ID = Deno.env.get("GITHUB_WORKFLOW_ID") || "publish-site-content.yml";
+const GITHUB_WORKFLOW_REF = Deno.env.get("GITHUB_WORKFLOW_REF") || "main";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,16 +19,6 @@ const jsonResponse = (body: Record<string, unknown>, status = 200) =>
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-
-const getNoCacheDeployHookUrl = (deployHookUrl: string) => {
-  const url = new URL(deployHookUrl);
-
-  if (!url.searchParams.has("buildCache")) {
-    url.searchParams.set("buildCache", "false");
-  }
-
-  return url.toString();
-};
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -40,8 +34,11 @@ serve(async (req) => {
       return jsonResponse({ success: false, error: "Supabase server credentials are not configured." }, 500);
     }
 
-    if (!DEPLOY_HOOK_URL) {
-      return jsonResponse({ success: false, error: "DEPLOY_HOOK_URL is not configured." }, 500);
+    if (!GITHUB_ACTIONS_TOKEN || !GITHUB_REPO_OWNER || !GITHUB_REPO_NAME) {
+      return jsonResponse({
+        success: false,
+        error: "GitHub workflow dispatch is not configured.",
+      }, 500);
     }
 
     const authHeader = req.headers.get("Authorization");
@@ -72,25 +69,32 @@ serve(async (req) => {
     }
 
     const requestBody = await req.json().catch(() => ({}));
-    const deployResponse = await fetch(getNoCacheDeployHookUrl(DEPLOY_HOOK_URL), {
+    const workflowDispatchUrl = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/workflows/${GITHUB_WORKFLOW_ID}/dispatches`;
+    const deployResponse = await fetch(workflowDispatchUrl, {
       method: "POST",
       headers: {
+        Accept: "application/vnd.github+json",
         "Content-Type": "application/json",
+        Authorization: `Bearer ${GITHUB_ACTIONS_TOKEN}`,
+        "X-GitHub-Api-Version": "2022-11-28",
       },
       body: JSON.stringify({
-        source: "stemise-admin",
-        requested_at: new Date().toISOString(),
-        ...requestBody,
+        ref: GITHUB_WORKFLOW_REF,
+        inputs: {
+          source: "stemise-admin",
+          requested_at: new Date().toISOString(),
+          section: typeof requestBody?.section === "string" ? requestBody.section : "all",
+        },
       }),
     });
 
     const responseText = await deployResponse.text();
     if (!deployResponse.ok) {
-      console.error("Deploy hook failed:", deployResponse.status, responseText);
+      console.error("GitHub workflow dispatch failed:", deployResponse.status, responseText);
       return jsonResponse(
         {
           success: false,
-          error: "The deploy hook request failed.",
+          error: "The GitHub workflow dispatch failed.",
           details: responseText || null,
         },
         502,
@@ -99,7 +103,7 @@ serve(async (req) => {
 
     return jsonResponse({
       success: true,
-      message: "Redeploy triggered.",
+      message: "GitHub publish workflow triggered.",
       details: responseText || null,
     });
   } catch (error) {

@@ -535,10 +535,19 @@ const Admin = () => {
       });
       setContent(verifiedContent);
 
+      let publishWarning: string | null = null;
+
+      try {
+        await triggerRedeployAfterSave("all");
+      } catch (error) {
+        publishWarning = error instanceof Error ? error.message : "GitHub publish trigger failed.";
+      }
+
       toast({
         title: "All content saved",
-        description:
-          "Everything was saved to Supabase. The GitHub publisher will detect this save and trigger the next no-cache redeploy.",
+        description: publishWarning
+          ? `Everything was saved to Supabase, but the GitHub publish trigger failed: ${publishWarning}`
+          : "Everything was saved to Supabase and the GitHub publish workflow was triggered.",
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Save failed.";
@@ -550,6 +559,39 @@ const Admin = () => {
     } finally {
       setSavingAll(false);
     }
+  };
+
+  const triggerRedeployAfterSave = async (scope: string) => {
+    if (!supabase) {
+      throw new Error("Supabase is not configured.");
+    }
+
+    const { data, error, response } = await supabase.functions.invoke("trigger-redeploy", {
+      body: {
+        section: scope,
+      },
+      timeout: 20_000,
+    });
+
+    if (error) {
+      if (response) {
+        try {
+          const errorPayload = await response.clone().json();
+          if (errorPayload?.error) {
+            throw new Error(errorPayload.error as string);
+          }
+        } catch {
+          const errorText = await response.clone().text().catch(() => "");
+          if (errorText) {
+            throw new Error(errorText);
+          }
+        }
+      }
+
+      throw new Error(error.message);
+    }
+
+    return data;
   };
 
   const handleResetSection = (key: SiteContentKey) => {
