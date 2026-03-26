@@ -38,7 +38,9 @@ const Courses = () => {
         <section id="age-paths" className="section-shell">
           <div className="container">
             <div className="mx-auto max-w-4xl text-center">
-              <h2 className="text-4xl font-semibold text-foreground">Choose an age path</h2>
+              <h2 className="inline-flex items-center rounded-full border-2 border-foreground bg-[#fff4a8] px-5 py-3 text-2xl font-semibold uppercase tracking-[-0.05em] leading-none text-foreground md:text-4xl xl:text-[3.35rem]">
+                Choose an age path
+              </h2>
             </div>
 
             <div className="stagger-grid mt-12 grid gap-6 lg:grid-cols-3">
@@ -70,7 +72,9 @@ const Courses = () => {
         <section className="section-shell">
           <div className="container">
             <div className="mx-auto max-w-4xl text-center">
-              <h2 className="text-4xl font-semibold text-foreground">Workshops</h2>
+              <h2 className="inline-flex items-center rounded-full border-2 border-foreground bg-[#fff4a8] px-5 py-3 text-2xl font-semibold uppercase tracking-[-0.05em] leading-none text-foreground md:text-4xl xl:text-[3.35rem]">
+                Workshops
+              </h2>
             </div>
 
             <div className="stagger-grid mt-12 grid gap-6 lg:grid-cols-3">
