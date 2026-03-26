@@ -51,7 +51,7 @@ const Contact = () => {
     if (result.success) {
       toast({
         title: "Message sent",
-        description: "We will get back to you as soon as possible.",
+        description: result.warning || "We will get back to you as soon as possible.",
       });
       setName("");
       setEmail("");

@@ -163,7 +163,7 @@ const Kits = () => {
     if (result.success) {
       toast({
         title: "Request submitted",
-        description: "We will review your kit request and follow up soon.",
+        description: result.warning || "We will review your kit request and follow up soon.",
       });
       setSelectedKits([]);
       setMessage("");

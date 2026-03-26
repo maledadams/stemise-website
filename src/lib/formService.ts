@@ -17,6 +17,7 @@ type StoredFormSubmission = {
 
 export type FormType = 'waitlist' | 'partnership' | 'contact';
 type RateLimitFormType = FormType | 'kit_request';
+const EDGE_FUNCTION_TIMEOUT_MS = 20_000;
 
 const RATE_LIMITS: Record<RateLimitFormType, { windowMs: number; max: number }> = {
     waitlist: { windowMs: 10 * 60 * 1000, max: 3 },
@@ -85,6 +86,75 @@ interface ContactData {
     captchaToken: string;
 }
 
+type ProtectedSubmissionResult = {
+    success: boolean;
+    error?: string;
+    warning?: string;
+    record?: StoredFormSubmission;
+};
+
+const invokePublicEdgeFunction = async (
+    functionName: string,
+    body: Record<string, unknown>,
+): Promise<ProtectedSubmissionResult> => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+        return supabaseNotConfiguredError;
+    }
+
+    try {
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), EDGE_FUNCTION_TIMEOUT_MS);
+        const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                apikey: supabaseAnonKey,
+                Authorization: `Bearer ${supabaseAnonKey}`,
+            },
+            signal: controller.signal,
+            body: JSON.stringify(body),
+        });
+        window.clearTimeout(timeoutId);
+
+        const responseText = await response.text();
+        let parsedBody: Record<string, unknown> | null = null;
+
+        if (responseText) {
+            try {
+                parsedBody = JSON.parse(responseText) as Record<string, unknown>;
+            } catch {
+                parsedBody = null;
+            }
+        }
+
+        if (!response.ok) {
+            const explicitError =
+                typeof parsedBody?.error === 'string'
+                    ? parsedBody.error
+                    : responseText || `Request failed with ${response.status}.`;
+            return { success: false, error: explicitError };
+        }
+
+        return {
+            success: Boolean(parsedBody?.success),
+            error: typeof parsedBody?.error === 'string' ? parsedBody.error : undefined,
+            warning: typeof parsedBody?.warning === 'string' ? parsedBody.warning : undefined,
+            record: parsedBody?.record as StoredFormSubmission | undefined,
+        };
+    } catch (error) {
+        const message =
+            error instanceof DOMException && error.name === 'AbortError'
+                ? 'The request took too long. Please try again.'
+                : error instanceof Error
+                    ? error.message
+                    : 'Please try again later.';
+        return { success: false, error: message };
+    }
+};
+
 async function submitProtectedFormSubmission(data: {
     formType: 'contact' | 'kit_request';
     email: string;
@@ -92,51 +162,26 @@ async function submitProtectedFormSubmission(data: {
     organizationName?: string | null;
     message: string;
     captchaToken: string;
-}): Promise<{ success: boolean; error?: string; record?: StoredFormSubmission }> {
+}): Promise<ProtectedSubmissionResult> {
     if (!supabase) {
         return supabaseNotConfiguredError;
     }
 
-    const { data: response, error, response: functionResponse } = await supabase.functions.invoke('submit-form', {
-        body: {
-            form_type: data.formType,
-            email: data.email,
-            name: data.name,
-            organization_name: data.organizationName ?? null,
-            message: data.message,
-            captcha_token: data.captchaToken,
-        },
+    const response = await invokePublicEdgeFunction('submit-form', {
+        form_type: data.formType,
+        email: data.email,
+        name: data.name,
+        organization_name: data.organizationName ?? null,
+        message: data.message,
+        captcha_token: data.captchaToken,
     });
 
-    if (error) {
-        console.error(`${data.formType} submission error:`, error);
-
-        if (functionResponse) {
-            try {
-                const errorPayload = await functionResponse.clone().json();
-                if (errorPayload?.error) {
-                    return { success: false, error: errorPayload.error };
-                }
-            } catch {
-                try {
-                    const errorText = await functionResponse.clone().text();
-                    if (errorText) {
-                        return { success: false, error: errorText };
-                    }
-                } catch {
-                    // Fall through to the generic error message below.
-                }
-            }
-        }
-
-        return { success: false, error: error.message };
+    if (!response.success) {
+        console.error(`${data.formType} submission error:`, response.error);
+        return { success: false, error: response.error || 'Please try again later.' };
     }
 
-    if (!response?.success) {
-        return { success: false, error: response?.error || 'Please try again later.' };
-    }
-
-    return { success: true, record: response.record };
+    return response;
 }
 
 /**
@@ -198,7 +243,7 @@ export async function submitPartnershipInquiry(data: PartnershipData): Promise<{
 /**
  * Submit a contact form message to Supabase
  */
-export async function submitContactMessage(data: ContactData): Promise<{ success: boolean; error?: string }> {
+export async function submitContactMessage(data: ContactData): Promise<{ success: boolean; error?: string; warning?: string }> {
     if (!supabase) {
         return supabaseNotConfiguredError;
     }
@@ -214,7 +259,7 @@ export async function submitContactMessage(data: ContactData): Promise<{ success
         captchaToken: data.captchaToken,
     });
 
-    return { success: result.success, error: result.error };
+    return { success: result.success, error: result.error, warning: result.warning };
 }
 
 interface KitRequestData {
@@ -229,7 +274,7 @@ interface KitRequestData {
 /**
  * Submit a STEM kit request to Supabase
  */
-export async function submitKitRequest(data: KitRequestData): Promise<{ success: boolean; error?: string }> {
+export async function submitKitRequest(data: KitRequestData): Promise<{ success: boolean; error?: string; warning?: string }> {
     if (!supabase) {
         return supabaseNotConfiguredError;
     }
@@ -248,5 +293,5 @@ export async function submitKitRequest(data: KitRequestData): Promise<{ success:
         captchaToken: data.captchaToken,
     });
 
-    return { success: result.success, error: result.error };
+    return { success: result.success, error: result.error, warning: result.warning };
 }

@@ -141,12 +141,13 @@ const RESEND_FROM_NAME = Deno.env.get("RESEND_FROM_NAME") || "STEMise";
 const TURNSTILE_SECRET_KEY = Deno.env.get("TURNSTILE_SECRET_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+const TURNSTILE_TIMEOUT_MS = 10_000;
+const RESEND_TIMEOUT_MS = 15_000;
 
 type SubmitFormPayload = {
   form_type: "contact" | "kit_request";
@@ -159,6 +160,15 @@ type SubmitFormPayload = {
 
 const badRequest = (error: string, status = 400) =>
   new Response(JSON.stringify({ success: false, error }), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+
+const successResponse = (
+  body: Record<string, unknown>,
+  status = 200,
+) =>
+  new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
@@ -185,10 +195,25 @@ const verifyTurnstile = async (token: string, remoteIp?: string) => {
     formData.set("remoteip", remoteIp);
   }
 
-  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-    method: "POST",
-    body: formData,
-  });
+  let response: Response;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TURNSTILE_TIMEOUT_MS);
+    response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      body: formData,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error && error.name === "AbortError"
+        ? "Security check timed out. Please try again."
+        : "Security check failed. Please try again.",
+    };
+  }
 
   const result = await response.json();
   if (!response.ok || !result.success) {
@@ -202,6 +227,8 @@ const verifyTurnstile = async (token: string, remoteIp?: string) => {
   return { success: true };
 };
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const sendResendEmail = async (record: FormSubmission) => {
   if (!RESEND_API_KEY) {
     return { success: false, error: "RESEND_API_KEY is not configured." };
@@ -209,32 +236,57 @@ const sendResendEmail = async (record: FormSubmission) => {
 
   const { subject, html } = buildEmailForSubmission(record);
 
-  const resendResponse = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${RESEND_API_KEY}`,
-    },
-    body: JSON.stringify({
-      from: `${RESEND_FROM_NAME} <${RESEND_FROM_EMAIL}>`,
-      to: [TARGET_EMAIL],
-      reply_to: record.email,
-      subject,
-      html,
-    }),
-  });
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), RESEND_TIMEOUT_MS);
+      const resendResponse = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${RESEND_API_KEY}`,
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          from: `${RESEND_FROM_NAME} <${RESEND_FROM_EMAIL}>`,
+          to: [TARGET_EMAIL],
+          reply_to: record.email,
+          subject,
+          html,
+        }),
+      });
+      clearTimeout(timeoutId);
 
-  const resendData = await resendResponse.json();
-  if (!resendResponse.ok) {
-    return {
-      success: false,
-      error: "Failed to send notification email.",
-      details: resendData,
-      status: resendResponse.status,
-    };
+      const resendText = await resendResponse.text();
+      const resendData = resendText ? JSON.parse(resendText) : null;
+
+      if (resendResponse.ok) {
+        return { success: true, data: resendData };
+      }
+
+      if (attempt === 2 || resendResponse.status < 500) {
+        return {
+          success: false,
+          error: typeof resendData?.message === "string"
+            ? resendData.message
+            : "Failed to send notification email.",
+          details: resendData,
+          status: resendResponse.status,
+        };
+      }
+    } catch (error) {
+      if (attempt === 2) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to send notification email.",
+        };
+      }
+    }
+
+    await delay(800);
   }
 
-  return { success: true, data: resendData };
+  return { success: false, error: "Failed to send notification email." };
 };
 
 serve(async (req) => {
@@ -292,32 +344,13 @@ serve(async (req) => {
 
     if (!emailResult.success) {
       console.error("Notification email failed:", emailResult);
-
-      if (SUPABASE_SERVICE_ROLE_KEY) {
-        const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-          auth: {
-            autoRefreshToken: false,
-            persistSession: false,
-          },
-        });
-
-        const { error: cleanupError } = await serviceClient
-          .from("form_submissions")
-          .delete()
-          .eq("id", record.id);
-
-        if (cleanupError) {
-          console.error("Failed to remove queued submission after email failure:", cleanupError);
-        }
-      }
-
-      return badRequest("We could not complete the submission. Please try again.", 502);
+      return successResponse({
+        success: true,
+        warning: "Your request was saved, but notification email delivery is delayed. STEMise can still review it from Supabase.",
+      }, 202);
     }
 
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return successResponse({ success: true });
   } catch (error) {
     console.error("Error handling form submission:", error);
     return badRequest("Internal server error.", 500);
