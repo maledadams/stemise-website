@@ -25,12 +25,28 @@ jobs:
         with:
           node-version: 20
 
+      - name: Validate GitHub publisher configuration
+        run: |
+          $missing = @()
+          if ([string]::IsNullOrWhiteSpace($env:VITE_SUPABASE_URL)) { $missing += "VITE_SUPABASE_URL" }
+          if ([string]::IsNullOrWhiteSpace($env:VITE_SUPABASE_ANON_KEY)) { $missing += "VITE_SUPABASE_ANON_KEY" }
+          if ([string]::IsNullOrWhiteSpace($env:DEPLOY_HOOK_URL)) { $missing += "DEPLOY_HOOK_URL" }
+          if ($missing.Count -gt 0) {
+            Write-Error ("Missing GitHub Actions configuration: " + ($missing -join ", ") + ". Add them under Settings > Secrets and variables > Actions. Repository-level Secrets are safest. If you used Environment secrets, this workflow needs an environment attached before it can read them.")
+            exit 1
+          }
+        shell: pwsh
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL != '' && secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY != '' && secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
+          DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL != '' && secrets.DEPLOY_HOOK_URL || vars.DEPLOY_HOOK_URL }}
+
       - name: Trigger redeploy when site JSON changes
         run: node scripts/check-site-content-redeploy.js
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL != '' && secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY != '' && secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
+          DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL != '' && secrets.DEPLOY_HOOK_URL || vars.DEPLOY_HOOK_URL }}
 
       - name: Commit updated deploy state
         run: |
