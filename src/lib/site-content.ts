@@ -448,6 +448,18 @@ export const fallbackSiteContent: SiteContentMap = {
   curriculum_pages: curriculumPagesFallback,
 };
 
+export const emptySiteContent: SiteContentMap = {
+  home_events: [],
+  impact_metrics: [],
+  impact_countries: [],
+  kits: [],
+  workshops: [],
+  supporters: [],
+  team_members: [],
+  curriculum_age_groups: [],
+  curriculum_pages: [],
+};
+
 export const siteContentLabels: Record<SiteContentKey, string> = {
   home_events: "Home events",
   impact_metrics: "Impact metrics",
@@ -460,8 +472,11 @@ export const siteContentLabels: Record<SiteContentKey, string> = {
   curriculum_pages: "Curriculum pages",
 };
 
+const getInitialSiteContentState = () =>
+  cloneValue(isSupabaseConfigured ? emptySiteContent : fallbackSiteContent);
+
 export const getFallbackSiteContent = <K extends SiteContentKey>(key: K): SiteContentMap[K] =>
-  cloneValue(fallbackSiteContent[key]);
+  cloneValue((isSupabaseConfigured ? emptySiteContent : fallbackSiteContent)[key]);
 
 export const normalizeSiteContent = <K extends SiteContentKey>(
   key: K,
@@ -477,7 +492,7 @@ export const normalizeSiteContent = <K extends SiteContentKey>(
 const normalizeSiteContentState = (
   payload: Partial<Record<SiteContentKey, unknown>> | null | undefined,
 ): SiteContentMap => {
-  const nextContent = cloneValue(fallbackSiteContent);
+  const nextContent = getInitialSiteContentState();
 
   if (!payload) {
     return nextContent;
@@ -530,10 +545,7 @@ export const fetchSiteContent = async <K extends SiteContentKey>(
     return getFallbackSiteContent(key);
   }
 
-  const data = await fetchSiteContentStateRow();
-  if (!data) {
-    return getFallbackSiteContent(key);
-  }
+  const data = await fetchSiteContentStateRow({ throwOnError: true });
 
   return normalizeSiteContent(key, data.payload?.[key]);
 };
@@ -543,10 +555,7 @@ export const fetchAllSiteContent = async (): Promise<SiteContentMap> => {
     return cloneValue(fallbackSiteContent);
   }
 
-  const data = await fetchSiteContentStateRow();
-  if (!data) {
-    return cloneValue(fallbackSiteContent);
-  }
+  const data = await fetchSiteContentStateRow({ throwOnError: true });
 
   return normalizeSiteContentState(data.payload);
 };
@@ -690,7 +699,7 @@ export const useAllSiteContentQuery = () =>
   useQuery({
     queryKey: ["site-content", "all"],
     queryFn: fetchAllSiteContent,
-    initialData: cloneValue(fallbackSiteContent),
+    initialData: getInitialSiteContentState(),
     staleTime: 0,
     refetchOnMount: "always",
     refetchOnWindowFocus: true,

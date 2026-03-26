@@ -316,7 +316,17 @@ const Admin = () => {
   const [content, setContent] = useState<SiteContentMap>(() => cloneValue(data));
   const [authPending, setAuthPending] = useState(false);
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [passwordResetPending, setPasswordResetPending] = useState(false);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      (window.location.hash.includes("type=recovery") ||
+        window.location.search.includes("type=recovery")),
+  );
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [activeTab, setActiveTab] = useState<SiteContentKey>("home_events");
   const [availableCountryNames, setAvailableCountryNames] = useState<string[]>([]);
   const [countrySearch, setCountrySearch] = useState("");
@@ -358,6 +368,31 @@ const Admin = () => {
 
     return () => {
       mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!supabase) return;
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setIsPasswordRecovery(true);
+        return;
+      }
+
+      if (event === "SIGNED_OUT") {
+        setIsPasswordRecovery(false);
+      }
+
+      if (event === "USER_UPDATED") {
+        setIsPasswordRecovery(false);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
     };
   }, []);
 
@@ -567,27 +602,123 @@ const Admin = () => {
       const redirectUrl =
         typeof window !== "undefined" ? `${window.location.origin}/admin` : undefined;
 
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: redirectUrl,
-          shouldCreateUser: false,
+      const { data, error, response } = await supabase.functions.invoke("request-admin-magic-link", {
+        body: {
+          email,
+          password,
+          redirectTo: redirectUrl,
         },
+      });
+
+      if (error) {
+        if (response) {
+          try {
+            const errorPayload = await response.clone().json();
+            if (errorPayload?.error) {
+              throw new Error(errorPayload.error as string);
+            }
+          } catch {
+            const errorText = await response.clone().text().catch(() => "");
+            if (errorText) {
+              throw new Error(errorText);
+            }
+          }
+        }
+
+        throw new Error(error.message);
+      }
+
+      if (data && typeof data === "object" && "error" in data && data.error) {
+        throw new Error(String(data.error));
+      }
+
+      setMagicLinkSent(true);
+      toast({
+        title: "Magic link sent",
+        description: "Password confirmed. Check your inbox and open the link on this device to unlock admin mode.",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Magic link failed.";
+      toast({
+        title: "Could not send magic link",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setAuthPending(false);
+    }
+  };
+
+  const handleSendPasswordReset = async () => {
+    if (!supabase) return;
+
+    try {
+      setPasswordResetPending(true);
+      const redirectUrl =
+        typeof window !== "undefined" ? `${window.location.origin}/admin` : undefined;
+
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: redirectUrl,
       });
 
       if (error) {
         throw error;
       }
 
-      setMagicLinkSent(true);
       toast({
-        title: "Magic link sent",
-        description: "Check your inbox and open the link on this device to unlock admin mode.",
+        title: "Password reset email sent",
+        description: "Check your inbox for a secure link to change the admin password.",
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Magic link failed.";
+      const message = error instanceof Error ? error.message : "Password reset failed.";
       toast({
-        title: "Could not send magic link",
+        title: "Could not send password reset email",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setPasswordResetPending(false);
+    }
+  };
+
+  const handleUpdatePassword = async () => {
+    if (!supabase) return;
+
+    try {
+      setAuthPending(true);
+
+      if (!newPassword || newPassword.length < 8) {
+        throw new Error("Use a password with at least 8 characters.");
+      }
+
+      if (newPassword !== confirmPassword) {
+        throw new Error("The password confirmation does not match.");
+      }
+
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setNewPassword("");
+      setConfirmPassword("");
+      setIsPasswordRecovery(false);
+
+      if (typeof window !== "undefined") {
+        window.history.replaceState({}, document.title, "/admin");
+      }
+
+      toast({
+        title: "Password updated",
+        description: "Your admin password has been changed.",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Password update failed.";
+      toast({
+        title: "Could not update password",
         description: message,
         variant: "destructive",
       });
@@ -671,8 +802,8 @@ const Admin = () => {
                 </div>
                 <CardTitle className="mt-4 text-4xl">Sign in to edit STEMise content.</CardTitle>
                 <CardDescription className="text-base leading-7">
-                  This panel uses Supabase magic links only. Enter an existing admin email and we
-                  will send you a sign-in link that opens `/admin`.
+                  Enter your admin email and password first. If they match an allowlisted admin
+                  account, STEMise sends a magic link to that email that opens `/admin`.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -685,14 +816,81 @@ const Admin = () => {
                   }}
                   placeholder="Admin email"
                 />
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    setMagicLinkSent(false);
+                  }}
+                  placeholder="Admin password"
+                />
                 {magicLinkSent ? (
                   <div className="rounded-[1.4rem] border-2 border-foreground bg-[#eef8dc] px-4 py-3 text-sm leading-6 text-foreground">
                     Magic link sent. Open the email on this device to unlock admin mode.
                   </div>
                 ) : null}
-                <Button onClick={handleSendMagicLink} disabled={authPending || !email} className="w-full">
+                <Button onClick={handleSendMagicLink} disabled={authPending || !email || !password} className="w-full">
                   {authPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
                   Send magic link
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleSendPasswordReset}
+                  disabled={passwordResetPending || !email}
+                  className="w-full"
+                >
+                  {passwordResetPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Send password reset email
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (session && isPasswordRecovery) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Seo title="Admin" pathname="/admin" noIndex />
+        <Header />
+        <main className="section-shell">
+          <div className="container">
+            <Card className="mx-auto max-w-xl rounded-[2rem] border-2 border-foreground bg-white">
+              <CardHeader>
+                <div className="inline-flex w-fit rounded-full border-2 border-foreground bg-[#fff4a8] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]">
+                  Admin
+                </div>
+                <CardTitle className="mt-4 text-4xl">Set a new admin password.</CardTitle>
+                <CardDescription className="text-base leading-7">
+                  Choose a new password for this admin account, then continue into the panel.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Input
+                  type="password"
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  placeholder="New password"
+                />
+                <Input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  placeholder="Confirm new password"
+                />
+                <Button
+                  type="button"
+                  onClick={handleUpdatePassword}
+                  disabled={authPending || !newPassword || !confirmPassword}
+                  className="w-full"
+                >
+                  {authPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Update password
                 </Button>
               </CardContent>
             </Card>
