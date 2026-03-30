@@ -774,89 +774,6 @@ const Admin = () => {
     );
   }
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Seo title="Admin" pathname="/admin" noIndex />
-        <Header />
-        <main className="section-shell">
-          <div className="container flex justify-center">
-            <div className="inline-flex items-center gap-3 rounded-full border-2 border-foreground bg-white px-6 py-3 text-sm font-medium">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Checking admin session...
-            </div>
-          </div>
-        </main>
-        <Footer />
-      </div>
-    );
-  }
-
-  if (!session) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Seo title="Admin" pathname="/admin" noIndex />
-        <Header />
-        <main className="section-shell">
-          <div className="container">
-            <Card className="mx-auto max-w-xl rounded-[2rem] border-2 border-foreground bg-white">
-              <CardHeader>
-                <div className="inline-flex w-fit rounded-full border-2 border-foreground bg-[#fff4a8] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]">
-                  Admin
-                </div>
-                <CardTitle className="mt-4 text-4xl">Sign in to edit STEMise content.</CardTitle>
-                <CardDescription className="text-base leading-7">
-                  Enter your admin email and password first. If they match an allowlisted admin
-                  account, STEMise sends a magic link to that email that opens `/admin`.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Input
-                  type="email"
-                  value={email}
-                  onChange={(event) => {
-                    setEmail(event.target.value);
-                    setMagicLinkSent(false);
-                  }}
-                  placeholder="Admin email"
-                />
-                <Input
-                  type="password"
-                  value={password}
-                  onChange={(event) => {
-                    setPassword(event.target.value);
-                    setMagicLinkSent(false);
-                  }}
-                  placeholder="Admin password"
-                />
-                {magicLinkSent ? (
-                  <div className="rounded-[1.4rem] border-2 border-foreground bg-[#eef8dc] px-4 py-3 text-sm leading-6 text-foreground">
-                    Magic link sent. Open the email on this device to unlock admin mode.
-                  </div>
-                ) : null}
-                <Button onClick={handleSendMagicLink} disabled={authPending || !email || !password} className="w-full">
-                  {authPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-                  Send magic link
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleSendPasswordReset}
-                  disabled={passwordResetPending || !email}
-                  className="w-full"
-                >
-                  {passwordResetPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Send password reset email
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        </main>
-        <Footer />
-      </div>
-    );
-  }
-
   if (session && isPasswordRecovery) {
     return (
       <div className="min-h-screen bg-background">
@@ -895,6 +812,77 @@ const Admin = () => {
                 >
                   {authPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   Update password
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (!session || authLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Seo title="Admin" pathname="/admin" noIndex />
+        <Header />
+        <main className="section-shell">
+          <div className="container">
+            <Card className="mx-auto max-w-xl rounded-[2rem] border-2 border-foreground bg-white">
+              <CardHeader>
+                <div className="inline-flex w-fit rounded-full border-2 border-foreground bg-[#fff4a8] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]">
+                  Admin
+                </div>
+                <CardTitle className="mt-4 text-4xl">Sign in to edit STEMise content.</CardTitle>
+                <CardDescription className="text-base leading-7">
+                  Enter your admin email and password first. If they match an allowlisted admin
+                  account, STEMise sends a magic link to that email that opens `/admin`.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Input
+                  type="email"
+                  value={email}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    setMagicLinkSent(false);
+                  }}
+                  placeholder="Admin email"
+                />
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    setMagicLinkSent(false);
+                  }}
+                  placeholder="Admin password"
+                />
+                {authLoading ? (
+                  <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Checking existing admin session in the background...
+                  </div>
+                ) : null}
+                {magicLinkSent ? (
+                  <div className="rounded-[1.4rem] border-2 border-foreground bg-[#eef8dc] px-4 py-3 text-sm leading-6 text-foreground">
+                    Magic link sent. Open the email on this device to unlock admin mode.
+                  </div>
+                ) : null}
+                <Button onClick={handleSendMagicLink} disabled={authPending || !email || !password} className="w-full">
+                  {authPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                  Send magic link
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleSendPasswordReset}
+                  disabled={passwordResetPending || !email}
+                  className="w-full"
+                >
+                  {passwordResetPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Send password reset email
                 </Button>
               </CardContent>
             </Card>
