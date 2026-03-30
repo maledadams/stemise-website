@@ -1,4 +1,4 @@
-export const SITE_CONTENT_BUILD_SNAPSHOT_HASH = "eaf2310f9ca81568d4455e0588af05d465f05a1c8e6d18bfc69c99996c54cbef";
+export const SITE_CONTENT_BUILD_SNAPSHOT_HASH = "b8363d649f0903778d866dd129be939d91d01c510bcb34b3e029a916eaa92288";
 export const SITE_CONTENT_BUILD_SNAPSHOT = {
   "kits": [
     {
@@ -156,7 +156,7 @@ export const SITE_CONTENT_BUILD_SNAPSHOT = {
         {
           "id": "event-sponsor-f7bb91c6",
           "href": "https://codecrafters.io/",
-          "logo": "https://jdrmfzufpwiqhbryoyfh.supabase.co/storage/v1/object/public/site-assets/events/sponsors/9dbbc64d-14bb-403c-8b9a-1770870f0e56.jpg",
+          "logo": "https://image2url.com/r2/default/images/1774813092288-2dd4547e-a4cb-4994-900c-6e2100ab0965.png",
           "name": "Code Crafters"
         },
         {
@@ -169,7 +169,7 @@ export const SITE_CONTENT_BUILD_SNAPSHOT = {
           "id": "event-sponsor-2235f46f",
           "href": "https://ideavo.ai/",
           "logo": "https://jdrmfzufpwiqhbryoyfh.supabase.co/storage/v1/object/public/site-assets/events/sponsors/b63877ac-706d-4b27-903f-5a5001c76161.png",
-          "name": "IDeavo"
+          "name": " Ideavo"
         },
         {
           "id": "event-sponsor-b6fd395f",
@@ -187,19 +187,31 @@ export const SITE_CONTENT_BUILD_SNAPSHOT = {
           "id": "event-sponsor-e0bd9d56",
           "href": "https://www.relay.app/",
           "logo": "https://jdrmfzufpwiqhbryoyfh.supabase.co/storage/v1/object/public/site-assets/events/sponsors/97245dce-b9e8-4834-b22b-40ebd0244b22.png",
-          "name": "Relay"
+          "name": "Relay.app"
+        },
+        {
+          "id": "event-sponsor-10b82960",
+          "href": "https://www.interviewcake.com/",
+          "logo": "https://jdrmfzufpwiqhbryoyfh.supabase.co/storage/v1/object/public/site-assets/events/sponsors/7b0a6277-4d5f-4915-99a4-f3a9b4f39e3d.png",
+          "name": "Interview Cake"
+        },
+        {
+          "id": "event-sponsor-5ac6c59d",
+          "href": "https://featherless.ai/",
+          "logo": "https://grubby-cyan-anmi45ov1f.edgeone.app/featherlessai-transparent.png",
+          "name": "Featherless.ai"
         }
       ],
       "hrefLabel": "Participate",
       "accentTheme": "blue",
-      "description": "DSH Hacks V1 is a global student competition open to students aged 13+ hosted collaboratively by three youth-led organizations: DeltaForge Hacks, NextHorizon, and STEMise.\n\nTheme: AI x STEM Education\n\nThis event brings together young innovators from around the world to reimagine the future of STEM education through artificial intelligence."
+      "description": "DSH Hacks V1 is a global student competition open to students aged 13+ hosted collaboratively by three youth-led organizations: DeltaForge Hacks, NextHorizon, and STEMise.\n\nTheme: AI x STEM Education\n\n\n\nThis event brings together young innovators from around the world to compete for prizes up to 5k dollars. "
     },
     {
       "id": "event-ab272f93",
       "date": "May 23-24, 2026",
       "href": "https://docs.google.com/forms/d/e/1FAIpQLSeWo9dvd9V3EVx-8C480cvQLDaMpIbvJaPI3UxPOC2wnOmhPw/viewform",
       "image": "https://jdrmfzufpwiqhbryoyfh.supabase.co/storage/v1/object/public/site-assets/events/771fdd13-3ef4-4b1f-aa2b-bd0e8bcb1dfc.jpg",
-      "title": "NextStem Math Contest",
+      "title": "Youth International Math Olympiad (YIMO)",
       "status": "Open to register",
       "imageAlt": "",
       "location": "Online event",
