@@ -14,3 +14,8 @@ entrypoint = "./functions/send-form-email/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/submit-form/index.ts"
+
+[functions.request-admin-magic-link]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/request-admin-magic-link/index.ts"
