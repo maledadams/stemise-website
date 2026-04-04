@@ -4,7 +4,7 @@ import {
   GripVertical,
   Loader2,
   LogOut,
-  Mail,
+  LogIn,
   Plus,
   Save,
   Trash2,
@@ -49,57 +49,7 @@ import type {
 } from "@/lib/site-data";
 
 const cloneValue = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
-const EDGE_FUNCTION_TIMEOUT_MS = 20_000;
 const serializeSiteContent = (value: SiteContentMap) => JSON.stringify(value);
-
-const invokePublicEdgeFunction = async (
-  functionName: string,
-  body: Record<string, unknown>,
-) => {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
-  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error("Supabase is not configured.");
-  }
-
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), EDGE_FUNCTION_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${supabaseAnonKey}`,
-      },
-      signal: controller.signal,
-      body: JSON.stringify(body),
-    });
-
-    const responseText = await response.text();
-    const payload = responseText ? JSON.parse(responseText) as Record<string, unknown> : {};
-
-    if (!response.ok) {
-      throw new Error(
-        typeof payload.error === "string"
-          ? payload.error
-          : responseText || `Request failed with ${response.status}.`,
-      );
-    }
-
-    return payload;
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error("The request timed out. Please try again.");
-    }
-
-    throw error instanceof Error ? error : new Error("Please try again later.");
-  } finally {
-    window.clearTimeout(timeoutId);
-  }
-};
 
 const slugify = (value: string) =>
   value
@@ -370,7 +320,6 @@ const Admin = () => {
   const [authPending, setAuthPending] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [passwordResetPending, setPasswordResetPending] = useState(false);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(
     () =>
@@ -669,33 +618,29 @@ const Admin = () => {
     replaceSection(key, cloneValue(data[key]));
   };
 
-  const handleSendMagicLink = async () => {
+  const handleSignIn = async () => {
     if (!supabase) return;
 
     try {
       setAuthPending(true);
-      const redirectUrl =
-        typeof window !== "undefined" ? `${window.location.origin}/admin` : undefined;
-
-      const data = await invokePublicEdgeFunction("request-admin-magic-link", {
-        email,
+      const normalizedEmail = email.trim().toLowerCase();
+      const { error } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
         password,
-        redirectTo: redirectUrl,
       });
 
-      if (data && typeof data === "object" && "error" in data && data.error) {
-        throw new Error(String(data.error));
+      if (error) {
+        throw error;
       }
 
-      setMagicLinkSent(true);
       toast({
-        title: "Magic link sent",
-        description: "Password confirmed. Check your inbox and open the link on this device to unlock admin mode.",
+        title: "Signed in",
+        description: "Admin session unlocked.",
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Magic link failed.";
+      const message = error instanceof Error ? error.message : "Sign-in failed.";
       toast({
-        title: "Could not send magic link",
+        title: "Could not sign in",
         description: message,
         variant: "destructive",
       });
@@ -918,37 +863,26 @@ const Admin = () => {
                 </div>
                 <CardTitle className="mt-4 text-4xl">Sign in to edit STEMise content.</CardTitle>
                 <CardDescription className="text-base leading-7">
-                  Enter your admin email and password first. If they match an allowlisted admin
-                  account, STEMise sends a magic link to that email that opens `/admin`.
+                  Enter your admin email and password. If the account is on the admin allowlist,
+                  you will be taken straight into the editor.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Input
                   type="email"
                   value={email}
-                  onChange={(event) => {
-                    setEmail(event.target.value);
-                    setMagicLinkSent(false);
-                  }}
+                  onChange={(event) => setEmail(event.target.value)}
                   placeholder="Admin email"
                 />
                 <Input
                   type="password"
                   value={password}
-                  onChange={(event) => {
-                    setPassword(event.target.value);
-                    setMagicLinkSent(false);
-                  }}
+                  onChange={(event) => setPassword(event.target.value)}
                   placeholder="Admin password"
                 />
-                {magicLinkSent ? (
-                  <div className="rounded-[1.4rem] border-2 border-foreground bg-[#eef8dc] px-4 py-3 text-sm leading-6 text-foreground">
-                    Magic link sent. Open the email on this device to unlock admin mode.
-                  </div>
-                ) : null}
-                <Button onClick={handleSendMagicLink} disabled={authPending || !email || !password} className="w-full">
-                  {authPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-                  Send magic link
+                <Button onClick={handleSignIn} disabled={authPending || !email || !password} className="w-full">
+                  {authPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+                  Sign in
                 </Button>
                 <Button
                   type="button"
