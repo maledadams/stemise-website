@@ -51,6 +51,56 @@ import type {
 } from "@/lib/site-data";
 
 const cloneValue = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const EDGE_FUNCTION_TIMEOUT_MS = 20_000;
+
+const invokePublicEdgeFunction = async (
+  functionName: string,
+  body: Record<string, unknown>,
+) => {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), EDGE_FUNCTION_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${supabaseAnonKey}`,
+      },
+      signal: controller.signal,
+      body: JSON.stringify(body),
+    });
+
+    const responseText = await response.text();
+    const payload = responseText ? JSON.parse(responseText) as Record<string, unknown> : {};
+
+    if (!response.ok) {
+      throw new Error(
+        typeof payload.error === "string"
+          ? payload.error
+          : responseText || `Request failed with ${response.status}.`,
+      );
+    }
+
+    return payload;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("The request timed out. Please try again.");
+    }
+
+    throw error instanceof Error ? error : new Error("Please try again later.");
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+};
 
 const slugify = (value: string) =>
   value
@@ -606,31 +656,11 @@ const Admin = () => {
       const redirectUrl =
         typeof window !== "undefined" ? `${window.location.origin}/admin` : undefined;
 
-      const { data, error, response } = await supabase.functions.invoke("request-admin-magic-link", {
-        body: {
-          email,
-          password,
-          redirectTo: redirectUrl,
-        },
+      const data = await invokePublicEdgeFunction("request-admin-magic-link", {
+        email,
+        password,
+        redirectTo: redirectUrl,
       });
-
-      if (error) {
-        if (response) {
-          try {
-            const errorPayload = await response.clone().json();
-            if (errorPayload?.error) {
-              throw new Error(errorPayload.error as string);
-            }
-          } catch {
-            const errorText = await response.clone().text().catch(() => "");
-            if (errorText) {
-              throw new Error(errorText);
-            }
-          }
-        }
-
-        throw new Error(error.message);
-      }
 
       if (data && typeof data === "object" && "error" in data && data.error) {
         throw new Error(String(data.error));
