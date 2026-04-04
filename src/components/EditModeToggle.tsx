@@ -5,7 +5,7 @@ import { useAdminAuth } from "@/components/AdminAuthProvider";
 
 const EditModeToggle = () => {
   const location = useLocation();
-  const { isAuthenticated, isLoading, rememberReturnPath, getRememberedReturnPath } = useAdminAuth();
+  const { isAuthenticated, rememberReturnPath, getRememberedReturnPath } = useAdminAuth();
 
   const isAdminRoute = location.pathname === "/admin";
 
@@ -15,7 +15,7 @@ const EditModeToggle = () => {
     }
   }, [isAdminRoute, location.hash, location.pathname, location.search, rememberReturnPath]);
 
-  if (isLoading || !isAuthenticated) {
+  if (!isAuthenticated) {
     return null;
   }
 

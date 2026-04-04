@@ -33,7 +33,7 @@ export const clearStoredAdminSessionState = () => {
 export const AdminAuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (!supabase) {
@@ -77,23 +77,6 @@ export const AdminAuthProvider = ({ children }: { children: React.ReactNode }) =
         }
       }
     };
-
-    supabase.auth.getSession().then(async (result) => {
-      if (cancelled) {
-        return;
-      }
-
-      if (result.error) {
-        if (!cancelled) {
-          setSession(null);
-          setIsAdmin(false);
-          setIsLoading(false);
-        }
-        return;
-      }
-
-      await syncSession(result.data.session ?? null);
-    });
 
     const {
       data: { subscription },

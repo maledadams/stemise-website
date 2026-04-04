@@ -822,7 +822,7 @@ const Admin = () => {
     );
   }
 
-  if (!session || authLoading) {
+  if (!session) {
     return (
       <div className="min-h-screen bg-background">
         <Seo title="Admin" pathname="/admin" noIndex />
@@ -859,12 +859,6 @@ const Admin = () => {
                   }}
                   placeholder="Admin password"
                 />
-                {authLoading ? (
-                  <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Checking existing admin session in the background...
-                  </div>
-                ) : null}
                 {magicLinkSent ? (
                   <div className="rounded-[1.4rem] border-2 border-foreground bg-[#eef8dc] px-4 py-3 text-sm leading-6 text-foreground">
                     Magic link sent. Open the email on this device to unlock admin mode.
@@ -893,7 +887,7 @@ const Admin = () => {
     );
   }
 
-  if (!isAdmin) {
+  if (session && !authLoading && !isAdmin) {
     return (
       <div className="min-h-screen bg-background">
         <Seo title="Admin" pathname="/admin" noIndex />
