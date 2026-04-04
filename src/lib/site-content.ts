@@ -20,7 +20,7 @@ import {
   type CurriculumPage,
 } from "@/lib/curriculum-content";
 import { SITE_CONTENT_BUILD_SNAPSHOT } from "@/generated/site-content-snapshot";
-import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import { ensureActiveSupabaseSession, isSupabaseConfigured, supabase } from "@/lib/supabase";
 
 export type WorkshopItem = {
   id: string;
@@ -77,8 +77,27 @@ const TEAM_MAX_UPLOAD_IMAGE_BYTES = 700 * 1024;
 const JPEG_UPLOAD_QUALITY = 0.76;
 const IMAGE_OPTIMIZATION_TIMEOUT_MS = 12_000;
 const STORAGE_UPLOAD_TIMEOUT_MS = 45_000;
+const ADMIN_AUTH_ERROR_MESSAGE = "Your admin session is no longer authorized. Open the latest magic link and sign in again.";
 
 const cloneValue = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+const normalizeAdminMutationError = (error: unknown) => {
+  if (!(error instanceof Error)) {
+    return new Error("The request failed. Please try again.");
+  }
+
+  const normalizedMessage = error.message.toLowerCase();
+  if (
+    normalizedMessage.includes("unauthorized") ||
+    normalizedMessage.includes("jwt") ||
+    normalizedMessage.includes("permission") ||
+    normalizedMessage.includes("row-level security")
+  ) {
+    return new Error(ADMIN_AUTH_ERROR_MESSAGE);
+  }
+
+  return error;
+};
 
 const readCachedSiteContent = (): SiteContentMap | null => {
   if (typeof window === "undefined") {
@@ -650,32 +669,37 @@ export const saveAllSiteContent = async (payload: SiteContentMap): Promise<SiteC
     throw new Error("Supabase is not configured.");
   }
 
-  const nextPayload = await syncAllImageBackedContentToStorage(payload);
+  try {
+    await ensureActiveSupabaseSession();
+    const nextPayload = await syncAllImageBackedContentToStorage(payload);
 
-  const { error } = await supabase.from("site_content_state").upsert(
-    {
-      id: SITE_CONTENT_ROW_ID,
-      payload: nextPayload,
-    },
-    { onConflict: "id" },
-  );
+    const { error } = await supabase.from("site_content_state").upsert(
+      {
+        id: SITE_CONTENT_ROW_ID,
+        payload: nextPayload,
+      },
+      { onConflict: "id" },
+    );
 
-  if (error) {
-    throw error;
+    if (error) {
+      throw error;
+    }
+
+    const verifiedState = await fetchSiteContentStateRow({ throwOnError: true });
+    const verifiedPayload = normalizeSiteContentState(verifiedState?.payload);
+
+    if (
+      stableSerializeForComparison(verifiedPayload) !==
+        stableSerializeForComparison(normalizeSiteContentState(nextPayload))
+    ) {
+      throw new Error("Content save could not be verified from Supabase.");
+    }
+
+    persistCachedSiteContent(verifiedPayload);
+    return verifiedPayload;
+  } catch (error) {
+    throw normalizeAdminMutationError(error);
   }
-
-  const verifiedState = await fetchSiteContentStateRow({ throwOnError: true });
-  const verifiedPayload = normalizeSiteContentState(verifiedState?.payload);
-
-  if (
-    stableSerializeForComparison(verifiedPayload) !==
-      stableSerializeForComparison(normalizeSiteContentState(nextPayload))
-  ) {
-    throw new Error("Content save could not be verified from Supabase.");
-  }
-
-  persistCachedSiteContent(verifiedPayload);
-  return verifiedPayload;
 };
 
 export const saveSiteContent = async <K extends SiteContentKey>(
@@ -686,42 +710,47 @@ export const saveSiteContent = async <K extends SiteContentKey>(
     throw new Error("Supabase is not configured.");
   }
 
-  const syncedPayload = await syncImageBackedContentToStorage(key, payload);
-  const currentContent = await fetchAllSiteContent();
-  const nextPayload: SiteContentMap = {
-    ...currentContent,
-    [key]: syncedPayload,
-  };
+  try {
+    await ensureActiveSupabaseSession();
+    const syncedPayload = await syncImageBackedContentToStorage(key, payload);
+    const currentContent = await fetchAllSiteContent();
+    const nextPayload: SiteContentMap = {
+      ...currentContent,
+      [key]: syncedPayload,
+    };
 
-  nextPayload.home_events = await syncImageBackedContentToStorage("home_events", nextPayload.home_events);
-  nextPayload.kits = await syncImageBackedContentToStorage("kits", nextPayload.kits);
-  nextPayload.supporters = await syncImageBackedContentToStorage("supporters", nextPayload.supporters);
-  nextPayload.team_members = await syncImageBackedContentToStorage("team_members", nextPayload.team_members);
-  nextPayload.curriculum_pages = await syncImageBackedContentToStorage("curriculum_pages", nextPayload.curriculum_pages);
+    nextPayload.home_events = await syncImageBackedContentToStorage("home_events", nextPayload.home_events);
+    nextPayload.kits = await syncImageBackedContentToStorage("kits", nextPayload.kits);
+    nextPayload.supporters = await syncImageBackedContentToStorage("supporters", nextPayload.supporters);
+    nextPayload.team_members = await syncImageBackedContentToStorage("team_members", nextPayload.team_members);
+    nextPayload.curriculum_pages = await syncImageBackedContentToStorage("curriculum_pages", nextPayload.curriculum_pages);
 
-  const { error } = await supabase.from("site_content_state").upsert(
-    {
-      id: SITE_CONTENT_ROW_ID,
-      payload: nextPayload,
-    },
-    { onConflict: "id" },
-  );
+    const { error } = await supabase.from("site_content_state").upsert(
+      {
+        id: SITE_CONTENT_ROW_ID,
+        payload: nextPayload,
+      },
+      { onConflict: "id" },
+    );
 
-  if (error) {
-    throw error;
+    if (error) {
+      throw error;
+    }
+
+    const verifiedState = await fetchSiteContentStateRow({ throwOnError: true });
+    const verifiedPayload = normalizeSiteContentState(verifiedState?.payload);
+
+    if (
+      stableSerializeForComparison(verifiedPayload[key]) !==
+        stableSerializeForComparison(normalizeContentAssets(key, nextPayload[key]))
+    ) {
+      throw new Error("Content save could not be verified from Supabase.");
+    }
+
+    persistCachedSiteContent(verifiedPayload);
+  } catch (error) {
+    throw normalizeAdminMutationError(error);
   }
-
-  const verifiedState = await fetchSiteContentStateRow({ throwOnError: true });
-  const verifiedPayload = normalizeSiteContentState(verifiedState?.payload);
-
-  if (
-    stableSerializeForComparison(verifiedPayload[key]) !==
-      stableSerializeForComparison(normalizeContentAssets(key, nextPayload[key]))
-  ) {
-    throw new Error("Content save could not be verified from Supabase.");
-  }
-
-  persistCachedSiteContent(verifiedPayload);
 };
 
 export const uploadSiteAsset = async (file: File, folder: string): Promise<string> => {
@@ -729,34 +758,39 @@ export const uploadSiteAsset = async (file: File, folder: string): Promise<strin
     throw new Error("Supabase is not configured.");
   }
 
-  const uploadFile = await optimizeImageForUpload(file, folder);
-  const safeFolder = folder.replace(/[^a-z0-9/-]/gi, "-").toLowerCase();
-  const fileExt = uploadFile.name.split(".").pop() || "png";
-  const filePath = `${safeFolder}/${crypto.randomUUID()}.${fileExt}`;
+  try {
+    await ensureActiveSupabaseSession();
+    const uploadFile = await optimizeImageForUpload(file, folder);
+    const safeFolder = folder.replace(/[^a-z0-9/-]/gi, "-").toLowerCase();
+    const fileExt = uploadFile.name.split(".").pop() || "png";
+    const filePath = `${safeFolder}/${crypto.randomUUID()}.${fileExt}`;
 
-  const uploadResult = await Promise.race([
-    supabase.storage
-      .from("site-assets")
-      .upload(filePath, uploadFile, {
-        cacheControl: "3600",
-        upsert: false,
-        contentType: uploadFile.type || file.type || undefined,
+    const uploadResult = await Promise.race([
+      supabase.storage
+        .from("site-assets")
+        .upload(filePath, uploadFile, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: uploadFile.type || file.type || undefined,
+        }),
+      new Promise<never>((_, reject) => {
+        window.setTimeout(() => {
+          reject(new Error("Upload timed out. Please try a smaller image."));
+        }, STORAGE_UPLOAD_TIMEOUT_MS);
       }),
-    new Promise<never>((_, reject) => {
-      window.setTimeout(() => {
-        reject(new Error("Upload timed out. Please try a smaller image."));
-      }, STORAGE_UPLOAD_TIMEOUT_MS);
-    }),
-  ]);
+    ]);
 
-  const { error: uploadError } = uploadResult;
+    const { error: uploadError } = uploadResult;
 
-  if (uploadError) {
-    throw uploadError;
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    const { data } = supabase.storage.from("site-assets").getPublicUrl(filePath);
+    return data.publicUrl;
+  } catch (error) {
+    throw normalizeAdminMutationError(error);
   }
-
-  const { data } = supabase.storage.from("site-assets").getPublicUrl(filePath);
-  return data.publicUrl;
 };
 
 export const useAllSiteContentQuery = <T = SiteContentMap>(

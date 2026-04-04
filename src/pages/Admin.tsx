@@ -23,9 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import {
-  fetchAllSiteContent,
   saveAllSiteContent,
-  saveSiteContent,
   siteContentLabels,
   uploadSiteAsset,
   useAllSiteContentQuery,
@@ -39,7 +37,7 @@ import type {
   CurriculumResource,
   CurriculumSectionPage,
 } from "@/lib/curriculum-content";
-import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import { ensureActiveSupabaseSession, isSupabaseConfigured, supabase } from "@/lib/supabase";
 import type {
   EventSponsor,
   HomeEvent,
@@ -52,6 +50,7 @@ import type {
 
 const cloneValue = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const EDGE_FUNCTION_TIMEOUT_MS = 20_000;
+const serializeSiteContent = (value: SiteContentMap) => JSON.stringify(value);
 
 const invokePublicEdgeFunction = async (
   functionName: string,
@@ -364,7 +363,7 @@ const Admin = () => {
   const { data } = useAllSiteContentQuery(undefined, {
     staleTime: 0,
     refetchOnMount: "always",
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
   });
   const { session, isAdmin, isLoading: authLoading } = useAdminAuth();
   const [content, setContent] = useState<SiteContentMap>(() => cloneValue(data));
@@ -388,10 +387,30 @@ const Admin = () => {
   const [teamDropTargetId, setTeamDropTargetId] = useState<string | null>(null);
   const [savingAll, setSavingAll] = useState(false);
   const [uploadingField, setUploadingField] = useState<string | null>(null);
+  const hasUnsavedChanges = useMemo(
+    () => serializeSiteContent(content) !== serializeSiteContent(data),
+    [content, data],
+  );
 
   useEffect(() => {
-    setContent(cloneValue(data));
-  }, [data]);
+    if (!hasUnsavedChanges) {
+      setContent(cloneValue(data));
+    }
+  }, [data, hasUnsavedChanges]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !hasUnsavedChanges) {
+      return;
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   useEffect(() => {
     let mounted = true;
@@ -616,6 +635,8 @@ const Admin = () => {
       throw new Error("Supabase is not configured.");
     }
 
+    await ensureActiveSupabaseSession();
+
     const { data, error, response } = await supabase.functions.invoke("trigger-redeploy", {
       body: {
         section: scope,
@@ -804,6 +825,37 @@ const Admin = () => {
     );
   }
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Seo title="Admin" pathname="/admin" noIndex />
+        <Header />
+        <main className="section-shell">
+          <div className="container">
+            <Card className="mx-auto max-w-xl rounded-[2rem] border-2 border-foreground bg-white">
+              <CardHeader>
+                <div className="inline-flex w-fit rounded-full border-2 border-foreground bg-[#fff4a8] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]">
+                  Admin
+                </div>
+                <CardTitle className="mt-4 text-4xl">Checking your admin session.</CardTitle>
+                <CardDescription className="text-base leading-7">
+                  Restoring your Supabase session and verifying admin access before loading the editor.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="inline-flex items-center gap-3 rounded-full border-2 border-foreground bg-secondary px-5 py-3 text-sm font-medium text-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading admin mode...
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
   if (session && isPasswordRecovery) {
     return (
       <div className="min-h-screen bg-background">
@@ -964,12 +1016,11 @@ const Admin = () => {
                   <CardTitle className="mt-4 text-4xl">Edit live STEMise site content.</CardTitle>
                   <CardDescription className="mt-2 max-w-3xl text-base leading-7">
                     This editor updates the homepage events, impact metrics, world map countries, kits, workshops,
-                    supporters, and team members through Supabase. Make all the edits you need across tabs, then save
-                    once when you are done.
+                    supporters, and team members through Supabase. Your edits stay in this tab until you save them.
                   </CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  <Button type="button" onClick={handleSaveAll} disabled={savingAll}>
+                  <Button type="button" onClick={handleSaveAll} disabled={savingAll || !hasUnsavedChanges}>
                     {savingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                     Save all changes
                   </Button>
@@ -978,6 +1029,16 @@ const Admin = () => {
                     Sign out
                   </Button>
                 </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-sm">
+                <div className="rounded-full border-2 border-foreground bg-white px-4 py-2 font-medium text-foreground">
+                  {hasUnsavedChanges ? "Unsaved changes" : "All changes saved"}
+                </div>
+                {hasUnsavedChanges ? (
+                  <div className="text-muted-foreground">
+                    Avoid refreshing or closing this tab until you save.
+                  </div>
+                ) : null}
               </div>
             </CardHeader>
           </Card>
