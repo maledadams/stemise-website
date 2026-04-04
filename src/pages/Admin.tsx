@@ -584,13 +584,16 @@ const Admin = () => {
       throw new Error("Supabase is not configured.");
     }
 
-    await ensureActiveSupabaseSession();
+    const activeSession = await ensureActiveSupabaseSession();
 
     const { data, error, response } = await supabase.functions.invoke("trigger-redeploy", {
       body: {
         section: scope,
       },
       timeout: 20_000,
+      headers: {
+        Authorization: `Bearer ${activeSession.access_token}`,
+      },
     });
 
     if (error) {
@@ -633,6 +636,7 @@ const Admin = () => {
         throw error;
       }
 
+      const activeSession = await ensureActiveSupabaseSession();
       let confirmationWarning: string | null = null;
 
       try {
@@ -641,6 +645,9 @@ const Admin = () => {
           {
             body: {},
             timeout: 15_000,
+            headers: {
+              Authorization: `Bearer ${activeSession.access_token}`,
+            },
           },
         );
 

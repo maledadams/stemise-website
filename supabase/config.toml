@@ -24,3 +24,8 @@ entrypoint = "./functions/request-admin-magic-link/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/send-admin-login-confirmation/index.ts"
+
+[functions.trigger-redeploy]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/trigger-redeploy/index.ts"
