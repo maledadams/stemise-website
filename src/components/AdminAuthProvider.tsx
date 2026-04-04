@@ -33,70 +33,31 @@ export const clearStoredAdminSessionState = () => {
 export const AdminAuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isLoading, setIsLoading] = useState(Boolean(supabase));
+  const [isAuthReady, setIsAuthReady] = useState(!supabase);
+  const [isAdminLoading, setIsAdminLoading] = useState(false);
 
   useEffect(() => {
     if (!supabase) {
-      setIsLoading(false);
+      setIsAuthReady(true);
       return;
     }
 
     let cancelled = false;
-    let syncRunId = 0;
-
-    const syncSession = async (nextSession: Session | null) => {
-      const runId = ++syncRunId;
-
-      if (!nextSession) {
-        if (!cancelled) {
-          setSession(null);
-          setIsAdmin(false);
-          setIsLoading(false);
-        }
-        return;
-      }
-
-      if (!cancelled) {
-        setSession(nextSession);
-        setIsLoading(true);
-      }
-
-      try {
-        const { data: nextIsAdmin, error } = await supabase.rpc("current_user_is_admin");
-        if (cancelled || runId !== syncRunId) {
-          return;
-        }
-
-        if (error) {
-          setSession(nextSession);
-          setIsAdmin(false);
-          setIsLoading(false);
-          return;
-        }
-
-        setSession(nextSession);
-        setIsAdmin(Boolean(nextIsAdmin));
-        setIsLoading(false);
-      } catch {
-        if (!cancelled && runId === syncRunId) {
-          setSession(nextSession);
-          setIsAdmin(false);
-          setIsLoading(false);
-        }
-      }
-    };
 
     const bootstrapSession = async () => {
-      setIsLoading(true);
-
       try {
+        await supabase.auth.initialize();
         const nextSession = await getActiveSupabaseSession();
-        await syncSession(nextSession);
+        if (!cancelled) {
+          setSession(nextSession);
+        }
       } catch {
         if (!cancelled) {
           setSession(null);
-          setIsAdmin(false);
-          setIsLoading(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsAuthReady(true);
         }
       }
     };
@@ -110,7 +71,9 @@ export const AdminAuthProvider = ({ children }: { children: React.ReactNode }) =
         clearStoredAdminSessionState();
       }
 
-      void Promise.resolve().then(() => syncSession(nextSession ?? null));
+      if (!cancelled) {
+        setSession(nextSession ?? null);
+      }
     });
 
     return () => {
@@ -118,6 +81,55 @@ export const AdminAuthProvider = ({ children }: { children: React.ReactNode }) =
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!supabase || !isAuthReady) {
+      return;
+    }
+
+    if (!session) {
+      setIsAdmin(false);
+      setIsAdminLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const verifyAdminAccess = async () => {
+      setIsAdminLoading(true);
+
+      try {
+        const { data: nextIsAdmin, error } = await supabase.rpc("current_user_is_admin");
+
+        if (cancelled) {
+          return;
+        }
+
+        if (error) {
+          setIsAdmin(false);
+          return;
+        }
+
+        setIsAdmin(Boolean(nextIsAdmin));
+      } catch {
+        if (!cancelled) {
+          setIsAdmin(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsAdminLoading(false);
+        }
+      }
+    };
+
+    void verifyAdminAccess();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthReady, session]);
+
+  const isLoading = !isAuthReady || isAdminLoading;
 
   const value = useMemo<AdminAuthContextValue>(
     () => ({
