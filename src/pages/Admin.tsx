@@ -633,9 +633,35 @@ const Admin = () => {
         throw error;
       }
 
+      let confirmationWarning: string | null = null;
+
+      try {
+        const { error: confirmationError, response } = await supabase.functions.invoke(
+          "send-admin-login-confirmation",
+          {
+            body: {},
+            timeout: 15_000,
+          },
+        );
+
+        if (confirmationError) {
+          if (response) {
+            const errorText = await response.clone().text().catch(() => "");
+            confirmationWarning = errorText || confirmationError.message;
+          } else {
+            confirmationWarning = confirmationError.message;
+          }
+        }
+      } catch (confirmationError) {
+        confirmationWarning =
+          confirmationError instanceof Error ? confirmationError.message : "Confirmation email failed.";
+      }
+
       toast({
         title: "Signed in",
-        description: "Admin session unlocked.",
+        description: confirmationWarning
+          ? `Admin session unlocked, but the confirmation email could not be sent: ${confirmationWarning}`
+          : "Admin session unlocked. A confirmation email was sent.",
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Sign-in failed.";
