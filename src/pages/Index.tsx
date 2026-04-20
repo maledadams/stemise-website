@@ -135,7 +135,7 @@ const Index = () => {
               </div>
             </div>
 
-            <div data-scroll-reveal className="stagger-grid mt-12 grid gap-6 xl:grid-cols-2">
+            <div data-scroll-reveal className="stagger-stack mt-12 space-y-7">
               {featuredEvents.map((event) => (
                 <FeaturedEventCard key={event.id} event={event} />
               ))}

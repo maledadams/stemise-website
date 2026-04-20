@@ -67,18 +67,18 @@ const LogoStrip = ({
   return (
     <div className="space-y-4">
       <div className="text-xs font-semibold uppercase tracking-[0.16em] opacity-70">{label}</div>
-      <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid min-w-0 gap-4 sm:grid-cols-2">
         {items.map((item) => {
           const card = (
-            <div className="play-card flex min-h-[96px] min-w-0 items-center justify-center gap-3 rounded-[1.5rem] border-2 border-foreground bg-white px-5 py-4">
+            <div className="flex min-h-[88px] min-w-0 items-center gap-4 rounded-[1.2rem] bg-white px-2 py-3">
               {item.logo ? (
                 <img
                   src={item.logo}
                   alt={item.name}
-                  className="h-10 max-w-[130px] shrink-0 object-contain"
+                  className="h-12 w-24 shrink-0 object-contain sm:w-28"
                 />
               ) : null}
-              <span className="min-w-0 break-words text-center text-sm font-semibold text-foreground">
+              <span className="min-w-0 break-words text-left text-sm font-semibold leading-6 text-foreground">
                 {item.name}
               </span>
             </div>
@@ -118,8 +118,8 @@ export const FeaturedEventCard = ({
 
   return (
     <article className={`play-card offset-card overflow-hidden rounded-[2rem] ${toneClass}`}>
-      <div className="grid min-w-0 gap-0 2xl:grid-cols-[minmax(0,1fr)_260px]">
-        <div className="min-w-0 p-6 md:p-7">
+      <div className="grid min-w-0 gap-0 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="min-w-0 p-6 md:p-8">
           <div className="flex flex-wrap items-center gap-2">
             <span className="max-w-full break-words rounded-full border-2 border-foreground bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-foreground">
               {event.status}
@@ -132,8 +132,8 @@ export const FeaturedEventCard = ({
             </span>
           </div>
 
-          <h3 className="mt-5 break-words text-3xl font-semibold md:text-4xl">{event.title}</h3>
-          <p className="mt-4 break-words text-sm leading-7 opacity-90 md:text-base">
+          <h3 className="mt-5 break-words text-3xl font-semibold md:text-5xl">{event.title}</h3>
+          <p className="mt-4 max-w-4xl break-words text-sm leading-7 opacity-90 md:text-base">
             {event.shortDescription}
           </p>
 
@@ -160,8 +160,8 @@ export const FeaturedEventCard = ({
           <EventActionButton event={event} href={`/events#${event.slug || event.id}`} label="See full event" />
         </div>
 
-        <div className="min-w-0 border-t-2 border-foreground 2xl:border-l-2 2xl:border-t-0">
-          <div className="h-full min-h-[220px] overflow-hidden bg-white">
+        <div className="min-w-0 border-t-2 border-foreground lg:border-l-2 lg:border-t-0">
+          <div className="h-full min-h-[260px] overflow-hidden bg-white lg:min-h-full">
             {event.image ? (
               <img
                 src={event.image}
@@ -191,7 +191,7 @@ export const EventDetailCard = ({
 
   return (
     <article id={event.slug} className={`play-card offset-card overflow-hidden rounded-[2.3rem] ${toneClass}`}>
-      <div className="grid min-w-0 gap-0 xl:grid-cols-[minmax(0,1.08fr)_400px]">
+      <div className="grid min-w-0 gap-0 xl:grid-cols-[minmax(0,1.15fr)_420px] 2xl:grid-cols-[minmax(0,1.25fr)_460px]">
         <div className="min-w-0 p-7 md:p-9">
           <div className="flex flex-wrap items-center gap-2">
             <span className="max-w-full break-words rounded-full border-2 border-foreground bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-foreground">
@@ -238,7 +238,7 @@ export const EventDetailCard = ({
       </div>
 
       <div className="border-t-2 border-foreground bg-white px-7 py-7 md:px-9">
-        <div className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.92fr)]">
+        <div className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] 2xl:grid-cols-[minmax(0,1.15fr)_minmax(460px,0.9fr)]">
           <div className="min-w-0 space-y-4">
             <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               Full overview

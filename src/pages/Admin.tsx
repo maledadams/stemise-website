@@ -762,7 +762,7 @@ const Admin = () => {
         try {
           await triggerRedeployAfterSave("all");
         } catch (error) {
-          publishWarning = error instanceof Error ? error.message : "GitHub publish trigger failed.";
+          publishWarning = error instanceof Error ? error.message : "Automatic redeploy trigger failed.";
         }
       }
 
@@ -771,8 +771,8 @@ const Admin = () => {
         description: LOCAL_DEV_EDIT_MODE
           ? "Your edits were saved in this browser session only. Nothing was sent to Supabase or GitHub."
           : publishWarning
-            ? `Everything was saved to Supabase, but the GitHub publish trigger failed: ${publishWarning}`
-            : "Everything was saved to Supabase and the GitHub publish workflow was triggered.",
+            ? `Everything was saved to Supabase, but automatic redeploy failed: ${publishWarning}`
+            : "Everything was saved to Supabase and automatic redeploy was triggered.",
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Save failed.";
@@ -804,17 +804,30 @@ const Admin = () => {
     });
 
     if (error) {
+      if (data && typeof data === "object" && "error" in data && data.error) {
+        const detail = "details" in data && data.details ? ` ${String(data.details)}` : "";
+        throw new Error(`${String(data.error)}${detail}`);
+      }
+
       if (response) {
-        try {
-          const errorPayload = await response.clone().json();
-          if (errorPayload?.error) {
-            throw new Error(errorPayload.error as string);
+        const responseText = await response.clone().text().catch(() => "");
+        if (responseText) {
+          let parsedMessage: string | null = null;
+          try {
+            const errorPayload = JSON.parse(responseText) as { error?: unknown; details?: unknown };
+            if (errorPayload.error) {
+              const detail = errorPayload.details ? ` ${String(errorPayload.details)}` : "";
+              parsedMessage = `${String(errorPayload.error)}${detail}`;
+            }
+          } catch {
+            parsedMessage = null;
           }
-        } catch {
-          const errorText = await response.clone().text().catch(() => "");
-          if (errorText) {
-            throw new Error(errorText);
+
+          if (parsedMessage) {
+            throw new Error(parsedMessage);
           }
+
+          throw new Error(responseText);
         }
       }
 
