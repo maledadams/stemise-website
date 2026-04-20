@@ -20,7 +20,7 @@ const Events = () => {
       />
       <Header />
       <main className="overflow-hidden bg-white">
-        <section className="relative overflow-hidden bg-white">
+        <section className="relative overflow-hidden border-b-2 border-foreground bg-white">
           <HeroShapes variant="home" />
           <div className="container relative pt-16 pb-16 md:pt-23 md:pb-20">
             <div className="page-hero-copy mx-auto max-w-3xl text-center">

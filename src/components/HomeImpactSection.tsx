@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { GeoPermissibleObjects } from "d3-geo";
 import { geoGraticule10, geoOrthographic, geoPath } from "d3-geo";
 import { motion, useInView, useReducedMotion } from "framer-motion";
+import HomePartnerBelts from "@/components/HomePartnerBelts";
 import { useSiteContentQuery } from "@/lib/site-content";
 import type { HomeImpactCountry } from "@/lib/site-data";
 
@@ -394,6 +395,7 @@ const HomeImpactSection = () => {
             </div>
           </div>
         </div>
+        <HomePartnerBelts />
       </div>
     </section>
   );

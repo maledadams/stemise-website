@@ -27,5 +27,5 @@ entrypoint = "./functions/send-admin-login-confirmation/index.ts"
 
 [functions.trigger-redeploy]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 entrypoint = "./functions/trigger-redeploy/index.ts"

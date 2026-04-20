@@ -10,6 +10,7 @@ const EMPTY_SITE_CONTENT_PAYLOAD = {
   kits: [],
   workshops: [],
   supporters: [],
+  home_professionals: [],
   team_members: [],
   curriculum_age_groups: [],
   curriculum_pages: [],

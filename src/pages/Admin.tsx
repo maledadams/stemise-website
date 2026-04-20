@@ -168,6 +168,13 @@ const createEmptySupporter = (): SupporterLogo => ({
   href: "",
 });
 
+const createEmptyHomeProfessional = (): SupporterLogo => ({
+  id: makeId("home-professional"),
+  name: "",
+  src: "",
+  href: "",
+});
+
 const createEmptyTeamMember = (): TeamMember => ({
   id: makeId("team"),
   title: "",
@@ -217,6 +224,7 @@ const sectionOrder: SiteContentKey[] = [
   "kits",
   "workshops",
   "supporters",
+  "home_professionals",
   "team_members",
   "curriculum_age_groups",
   "curriculum_pages",
@@ -1172,8 +1180,8 @@ const Admin = () => {
                   <CardTitle className="mt-4 text-4xl">Edit live STEMise site content.</CardTitle>
                   <CardDescription className="mt-2 max-w-3xl text-base leading-7">
                     {LOCAL_DEV_EDIT_MODE
-                      ? "This local editor lets you preview the shared events system, impact metrics, world map countries, kits, workshops, supporters, team members, and curriculum content without touching Supabase. Your edits stay in this browser session until you close it or replace them."
-                      : "This editor updates the shared events system, impact metrics, world map countries, kits, workshops, supporters, team members, and curriculum content through Supabase. Your edits stay in this tab until you save them."}
+                      ? "This local editor lets you preview the shared events system, impact metrics, world map countries, kits, workshops, supporters, homepage professional logos, team members, and curriculum content without touching Supabase. Your edits stay in this browser session until you close it or replace them."
+                      : "This editor updates the shared events system, impact metrics, world map countries, kits, workshops, supporters, homepage professional logos, team members, and curriculum content through Supabase. Your edits stay in this tab until you save them."}
                   </CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-3">
@@ -1905,6 +1913,92 @@ const Admin = () => {
                               "supporters",
                               (url) =>
                                 updateArrayItem("supporters", index, (current) => ({
+                                  ...current,
+                                  src: url,
+                                })),
+                              file,
+                            )
+                          }
+                        />
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </SectionShell>
+            </TabsContent>
+
+            <TabsContent value="home_professionals">
+              <SectionShell
+                title="Homepage professional logos"
+                description="Manage the separate homepage belt labeled Collaborated with professionals from. This does not affect event-specific professionals."
+                onReset={() => handleResetSection("home_professionals")}
+              >
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => appendArrayItem("home_professionals", createEmptyHomeProfessional())}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add professional logo
+                  </Button>
+                </div>
+                <div className="space-y-6">
+                  {content.home_professionals.map((professional, index) => (
+                    <Card key={professional.id} className="rounded-[1.8rem] border-2 border-foreground bg-white">
+                      <CardHeader className="flex flex-row items-start justify-between gap-4">
+                        <div>
+                          <CardTitle className="text-2xl">
+                            {professional.name || `Professional logo ${index + 1}`}
+                          </CardTitle>
+                          <CardDescription>Logo and optional outbound link for the homepage credibility belt.</CardDescription>
+                        </div>
+                        <Button type="button" variant="outline" onClick={() => removeArrayItem("home_professionals", index)}>
+                          <Trash2 className="h-4 w-4" />
+                          Remove
+                        </Button>
+                      </CardHeader>
+                      <CardContent className="grid gap-6 xl:grid-cols-[1fr_360px]">
+                        <div className="grid gap-4">
+                          <Input
+                            value={professional.name}
+                            onChange={(eventValue) =>
+                              updateArrayItem("home_professionals", index, (current) => ({
+                                ...current,
+                                name: eventValue.target.value,
+                                id: current.id || slugify(eventValue.target.value) || makeId("home-professional"),
+                              }))
+                            }
+                            placeholder="Organization name"
+                          />
+                          <Input
+                            value={professional.href ?? ""}
+                            onChange={(eventValue) =>
+                              updateArrayItem("home_professionals", index, (current) => ({
+                                ...current,
+                                href: eventValue.target.value,
+                              }))
+                            }
+                            placeholder="Optional redirect link"
+                          />
+                        </div>
+
+                        <AssetField
+                          label="Professional organization logo"
+                          value={professional.src}
+                          onChange={(value) =>
+                            updateArrayItem("home_professionals", index, (current) => ({
+                              ...current,
+                              src: value,
+                            }))
+                          }
+                          uploading={uploadingField === `home-professional-image-${index}`}
+                          onUpload={(file) =>
+                            handleUpload(
+                              `home-professional-image-${index}`,
+                              "home-professionals",
+                              (url) =>
+                                updateArrayItem("home_professionals", index, (current) => ({
                                   ...current,
                                   src: url,
                                 })),

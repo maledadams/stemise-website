@@ -385,6 +385,37 @@
     color: hsl(var(--foreground));
     background: rgba(255, 255, 255, 0.84);
   }
+
+  .logo-belt-mask {
+    overflow: hidden;
+    border: 2px solid hsl(var(--foreground));
+    border-radius: 2rem;
+    background: #ffffff;
+  }
+
+  .logo-belt-track {
+    display: flex;
+    width: max-content;
+    gap: 1rem;
+    padding: 0.75rem;
+    animation: impactBelt 30s linear infinite;
+  }
+
+  .logo-belt-track-reverse {
+    animation-direction: reverse;
+  }
+
+  .logo-belt-item {
+    display: flex;
+    min-width: 180px;
+    height: 82px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    border-radius: 1.4rem;
+    background: #ffffff;
+    padding: 1rem 1.4rem;
+  }
 }
 
 @keyframes fadeInUp {
@@ -577,6 +608,10 @@
   }
 
   .impact-belt-track {
+    animation: none !important;
+  }
+
+  .logo-belt-track {
     animation: none !important;
   }
 }

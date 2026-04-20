@@ -40,6 +40,7 @@ export type SiteContentKey =
   | "kits"
   | "workshops"
   | "supporters"
+  | "home_professionals"
   | "team_members"
   | "curriculum_age_groups"
   | "curriculum_pages";
@@ -51,6 +52,7 @@ export type SiteContentMap = {
   kits: KitCatalogItem[];
   workshops: WorkshopItem[];
   supporters: SupporterLogo[];
+  home_professionals: SupporterLogo[];
   team_members: TeamMember[];
   curriculum_age_groups: CurriculumAgeGroupContent[];
   curriculum_pages: CurriculumPage[];
@@ -144,13 +146,24 @@ const hasBuildSiteContentSnapshot = () =>
       typeof SITE_CONTENT_BUILD_SNAPSHOT === "object",
   );
 
+const hasAnySiteContentItems = (payload: Partial<Record<SiteContentKey, unknown>>) =>
+  (Object.keys(fallbackSiteContent) as SiteContentKey[]).some((key) => {
+    const sectionPayload = payload[key];
+    return Array.isArray(sectionPayload) && sectionPayload.length > 0;
+  });
+
 const readBuildSiteContentSnapshot = (): SiteContentMap | null => {
   if (!hasBuildSiteContentSnapshot()) {
     return null;
   }
 
+  const snapshotPayload = SITE_CONTENT_BUILD_SNAPSHOT as Partial<Record<SiteContentKey, unknown>>;
+  if (!hasAnySiteContentItems(snapshotPayload)) {
+    return null;
+  }
+
   return normalizeSiteContentState(
-    SITE_CONTENT_BUILD_SNAPSHOT as Partial<Record<SiteContentKey, unknown>>,
+    snapshotPayload,
   );
 };
 
@@ -433,6 +446,7 @@ const normalizeContentAssets = <K extends SiteContentKey>(
     case "kits":
       return normalizeKits(payload as KitCatalogItem[]) as SiteContentMap[K];
     case "supporters":
+    case "home_professionals":
       return normalizeSupporters(payload as SupporterLogo[]) as SiteContentMap[K];
     case "team_members":
       return normalizeTeamMembers(payload as TeamMember[]) as SiteContentMap[K];
@@ -533,11 +547,17 @@ const syncImageBackedContentToStorage = async <K extends SiteContentKey>(
         })),
       )) as SiteContentMap[K];
     case "supporters":
+    case "home_professionals":
       return (await Promise.all(
         (payload as SupporterLogo[]).map(async (supporter) => ({
           ...supporter,
           src: supporter.src
-            ? await syncAssetUrlToSupabase(supporter.src, "supporters", supporter.id || "supporter-image", cache)
+            ? await syncAssetUrlToSupabase(
+                supporter.src,
+                key === "home_professionals" ? "home-professionals" : "supporters",
+                supporter.id || "supporter-image",
+                cache,
+              )
             : supporter.src,
         })),
       )) as SiteContentMap[K];
@@ -571,6 +591,7 @@ export const fallbackSiteContent: SiteContentMap = {
   kits: kitCatalog,
   workshops: [],
   supporters: partnerLogos,
+  home_professionals: [],
   team_members: teamMembers,
   curriculum_age_groups: curriculumAgeGroupsFallback,
   curriculum_pages: curriculumPagesFallback,
@@ -583,6 +604,7 @@ export const emptySiteContent: SiteContentMap = {
   kits: [],
   workshops: [],
   supporters: [],
+  home_professionals: [],
   team_members: [],
   curriculum_age_groups: [],
   curriculum_pages: [],
@@ -598,6 +620,7 @@ export const siteContentLabels: Record<SiteContentKey, string> = {
   kits: "Kits",
   workshops: "Workshops",
   supporters: "Supporters",
+  home_professionals: "Home professionals",
   team_members: "Team members",
   curriculum_age_groups: "Curriculum age groups",
   curriculum_pages: "Curriculum pages",
@@ -792,6 +815,10 @@ const syncAllImageBackedContentToStorage = async (
   nextPayload.events = await syncImageBackedContentToStorage("events", nextPayload.events);
   nextPayload.kits = await syncImageBackedContentToStorage("kits", nextPayload.kits);
   nextPayload.supporters = await syncImageBackedContentToStorage("supporters", nextPayload.supporters);
+  nextPayload.home_professionals = await syncImageBackedContentToStorage(
+    "home_professionals",
+    nextPayload.home_professionals,
+  );
   nextPayload.team_members = await syncImageBackedContentToStorage("team_members", nextPayload.team_members);
   nextPayload.curriculum_pages = await syncImageBackedContentToStorage("curriculum_pages", nextPayload.curriculum_pages);
 
@@ -875,6 +902,10 @@ export const saveSiteContent = async <K extends SiteContentKey>(
     nextPayload.events = await syncImageBackedContentToStorage("events", nextPayload.events);
     nextPayload.kits = await syncImageBackedContentToStorage("kits", nextPayload.kits);
     nextPayload.supporters = await syncImageBackedContentToStorage("supporters", nextPayload.supporters);
+    nextPayload.home_professionals = await syncImageBackedContentToStorage(
+      "home_professionals",
+      nextPayload.home_professionals,
+    );
     nextPayload.team_members = await syncImageBackedContentToStorage("team_members", nextPayload.team_members);
     nextPayload.curriculum_pages = await syncImageBackedContentToStorage("curriculum_pages", nextPayload.curriculum_pages);
 
