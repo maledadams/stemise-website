@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  Download,
+  FileUp,
   GripVertical,
   Loader2,
   LogOut,
@@ -51,6 +53,43 @@ import type {
 const LOCAL_DEV_EDIT_MODE = import.meta.env.DEV;
 const cloneValue = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const serializeSiteContent = (value: SiteContentMap) => JSON.stringify(value);
+
+type SiteContentExportFile = {
+  version: 1;
+  exportedAt: string;
+  content: SiteContentMap;
+};
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const parseImportedSiteContent = (input: unknown, fallbackContent: SiteContentMap): SiteContentMap => {
+  const source = isPlainObject(input) && isPlainObject(input.content)
+    ? input.content
+    : input;
+
+  if (!isPlainObject(source)) {
+    throw new Error("Invalid JSON file. Expected a STEMise site content export.");
+  }
+
+  const nextContent = cloneValue(fallbackContent);
+  sectionOrder.forEach((key) => {
+    const value = source[key];
+    if (!Array.isArray(value)) {
+      return;
+    }
+
+    nextContent[key] = value as SiteContentMap[typeof key];
+  });
+
+  return nextContent;
+};
+
+const createSiteContentExport = (content: SiteContentMap): SiteContentExportFile => ({
+  version: 1,
+  exportedAt: new Date().toISOString(),
+  content,
+});
 
 const slugify = (value: string) =>
   value
@@ -426,6 +465,7 @@ type WorldGeoJson = {
 
 const Admin = () => {
   const queryClient = useQueryClient();
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const { data } = useAllSiteContentQuery(undefined, {
     staleTime: 0,
     refetchOnMount: "always",
@@ -651,6 +691,51 @@ const Admin = () => {
       });
     } finally {
       setUploadingField(null);
+    }
+  };
+
+  const handleExportContent = () => {
+    const exportFile = createSiteContentExport({
+      ...content,
+      impact_metrics: syncCountriesMetric(content.impact_metrics, content.impact_countries),
+    });
+    const blob = new Blob([JSON.stringify(exportFile, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `stemise-site-content-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: "Content exported",
+      description: "A JSON backup of the current admin draft was downloaded.",
+    });
+  };
+
+  const handleImportContent = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const rawValue = await file.text();
+      const nextContent = parseImportedSiteContent(JSON.parse(rawValue), content);
+      setContent(nextContent);
+      toast({
+        title: "Content imported",
+        description: `${file.name} is loaded into the current draft. Review it, then save when ready.`,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not import that JSON file.";
+      toast({
+        title: "Import failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      event.target.value = "";
     }
   };
 
@@ -925,37 +1010,6 @@ const Admin = () => {
     );
   }
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Seo title="Admin" pathname="/admin" noIndex />
-        <Header />
-        <main className="section-shell">
-          <div className="container">
-            <Card className="mx-auto max-w-xl rounded-[2rem] border-2 border-foreground bg-white">
-              <CardHeader>
-                <div className="inline-flex w-fit rounded-full border-2 border-foreground bg-[#fff4a8] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]">
-                  Admin
-                </div>
-                <CardTitle className="mt-4 text-4xl">Checking your admin session.</CardTitle>
-                <CardDescription className="text-base leading-7">
-                  Restoring your Supabase session and verifying admin access before loading the editor.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="inline-flex items-center gap-3 rounded-full border-2 border-foreground bg-secondary px-5 py-3 text-sm font-medium text-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading admin mode...
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </main>
-        <Footer />
-      </div>
-    );
-  }
-
   if (session && isPasswordRecovery) {
     return (
       <div className="min-h-screen bg-background">
@@ -1004,7 +1058,7 @@ const Admin = () => {
     );
   }
 
-  if (!session) {
+  if (!session || (session && authLoading && !isAdmin)) {
     return (
       <div className="min-h-screen bg-background">
         <Seo title="Admin" pathname="/admin" noIndex />
@@ -1110,6 +1164,21 @@ const Admin = () => {
                   </CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-3">
+                  <input
+                    ref={importInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    onChange={handleImportContent}
+                    className="hidden"
+                  />
+                  <Button type="button" variant="outline" onClick={handleExportContent}>
+                    <Download className="h-4 w-4" />
+                    Export JSON
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => importInputRef.current?.click()}>
+                    <FileUp className="h-4 w-4" />
+                    Import JSON
+                  </Button>
                   <Button type="button" onClick={handleSaveAll} disabled={savingAll || !hasUnsavedChanges}>
                     {savingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                     Save all changes

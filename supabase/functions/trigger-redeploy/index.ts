@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+const VERCEL_DEPLOY_HOOK_URL = Deno.env.get("VERCEL_DEPLOY_HOOK_URL") || Deno.env.get("DEPLOY_HOOK_URL");
 const GITHUB_ACTIONS_TOKEN = Deno.env.get("GITHUB_ACTIONS_TOKEN");
 const GITHUB_REPO_OWNER = Deno.env.get("GITHUB_REPO_OWNER");
 const GITHUB_REPO_NAME = Deno.env.get("GITHUB_REPO_NAME");
@@ -34,13 +35,6 @@ serve(async (req) => {
       return jsonResponse({ success: false, error: "Supabase server credentials are not configured." }, 500);
     }
 
-    if (!GITHUB_ACTIONS_TOKEN || !GITHUB_REPO_OWNER || !GITHUB_REPO_NAME) {
-      return jsonResponse({
-        success: false,
-        error: "GitHub workflow dispatch is not configured.",
-      }, 500);
-    }
-
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return jsonResponse({ success: false, error: "Missing authorization header." }, 401);
@@ -69,6 +63,51 @@ serve(async (req) => {
     }
 
     const requestBody = await req.json().catch(() => ({}));
+    const section = typeof requestBody?.section === "string" ? requestBody.section : "all";
+
+    if (VERCEL_DEPLOY_HOOK_URL) {
+      const deployHookUrl = new URL(VERCEL_DEPLOY_HOOK_URL);
+      deployHookUrl.searchParams.set("buildCache", "false");
+
+      const deployResponse = await fetch(deployHookUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          source: "stemise-admin",
+          requested_at: new Date().toISOString(),
+          section,
+        }),
+      });
+
+      const responseText = await deployResponse.text();
+      if (!deployResponse.ok) {
+        console.error("Vercel deploy hook failed:", deployResponse.status, responseText);
+        return jsonResponse(
+          {
+            success: false,
+            error: "The Vercel deploy hook failed.",
+            details: responseText || null,
+          },
+          502,
+        );
+      }
+
+      return jsonResponse({
+        success: true,
+        message: "Vercel deploy hook triggered.",
+        details: responseText || null,
+      });
+    }
+
+    if (!GITHUB_ACTIONS_TOKEN || !GITHUB_REPO_OWNER || !GITHUB_REPO_NAME) {
+      return jsonResponse({
+        success: false,
+        error: "Redeploy is not configured. Add VERCEL_DEPLOY_HOOK_URL, or configure the GitHub workflow dispatch secrets.",
+      }, 500);
+    }
+
     const workflowDispatchUrl = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/workflows/${GITHUB_WORKFLOW_ID}/dispatches`;
     const deployResponse = await fetch(workflowDispatchUrl, {
       method: "POST",
@@ -83,7 +122,7 @@ serve(async (req) => {
         inputs: {
           source: "stemise-admin",
           requested_at: new Date().toISOString(),
-          section: typeof requestBody?.section === "string" ? requestBody.section : "all",
+          section,
         },
       }),
     });
