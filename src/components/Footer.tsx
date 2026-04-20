@@ -30,6 +30,7 @@ const footerGroups = [
     title: "Explore",
     links: [
       { label: "Home", href: "/" },
+      { label: "Events", href: "/events" },
       { label: "Kits", href: "/kits" },
       { label: "Curriculum", href: "/curriculum" },
       { label: "Get Involved", href: "/get-involved" },

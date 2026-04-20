@@ -1,11 +1,11 @@
-import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import Seo from "@/components/Seo";
 import HeroShapes from "@/components/HeroShapes";
 import HomeImpactSection from "@/components/HomeImpactSection";
+import { FeaturedEventCard } from "@/components/events/EventSections";
 import { Button } from "@/components/ui/button";
 import stemKitsShowcase from "@/assets/stem-kits-showcase.jpg";
 import learningImage from "@/assets/learning.jpg";
@@ -14,8 +14,6 @@ import {
   externalLinks,
   fiscalSponsor,
   homeServices,
-  type EventSponsor,
-  type HomeEvent,
 } from "@/lib/site-data";
 
 const serviceStyles = [
@@ -23,210 +21,6 @@ const serviceStyles = [
   "bg-[#ffdcc2]",
   "bg-[#ddf1b8]",
 ];
-
-const eventAccentStyles: Record<NonNullable<HomeEvent["accentTheme"]>, string> = {
-  blue: "panel-blue border-foreground",
-  orange: "panel-orange border-foreground",
-  lime: "panel-lime border-foreground",
-  ink: "panel-ink border-foreground",
-};
-
-const SponsorCarousel = ({
-  sponsors,
-  accentTheme,
-}: {
-  sponsors: EventSponsor[];
-  accentTheme: NonNullable<HomeEvent["accentTheme"]>;
-}) => {
-  const trackRef = useRef<HTMLDivElement | null>(null);
-  const dragState = useRef<{
-    isDragging: boolean;
-    startX: number;
-    startScrollLeft: number;
-  }>({
-    isDragging: false,
-    startX: 0,
-    startScrollLeft: 0,
-  });
-  const [isDragging, setIsDragging] = useState(false);
-
-  if (!sponsors.length) return null;
-
-  const chipClass = accentTheme === "ink" ? "bg-white text-foreground" : "bg-white/88 text-foreground";
-
-  const scrollByAmount = (direction: "left" | "right") => {
-    const track = trackRef.current;
-    if (!track) return;
-
-    const cardWidth = Math.min(280, Math.max(220, track.clientWidth * 0.42));
-    track.scrollBy({
-      left: direction === "left" ? -cardWidth : cardWidth,
-      behavior: "smooth",
-    });
-  };
-
-  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    const track = trackRef.current;
-    if (!track) return;
-
-    dragState.current = {
-      isDragging: true,
-      startX: event.clientX,
-      startScrollLeft: track.scrollLeft,
-    };
-    setIsDragging(true);
-    track.setPointerCapture(event.pointerId);
-  };
-
-  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const track = trackRef.current;
-    if (!track || !dragState.current.isDragging) return;
-
-    const deltaX = event.clientX - dragState.current.startX;
-    track.scrollLeft = dragState.current.startScrollLeft - deltaX;
-  };
-
-  const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    const track = trackRef.current;
-    dragState.current.isDragging = false;
-    setIsDragging(false);
-    if (track?.hasPointerCapture(event.pointerId)) {
-      track.releasePointerCapture(event.pointerId);
-    }
-  };
-
-  return (
-    <div className="mt-8 border-t-2 border-foreground/15 pt-6">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="text-xs font-semibold uppercase tracking-[0.16em] opacity-70">
-          Sponsors
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => scrollByAmount("left")}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-foreground bg-white text-foreground transition-transform hover:-translate-x-0.5"
-            aria-label="Previous sponsors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => scrollByAmount("right")}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-foreground bg-white text-foreground transition-transform hover:translate-x-0.5"
-            aria-label="Next sponsors"
-          >
-            <ArrowRight className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-      <div className="overflow-hidden rounded-[1.6rem] border-2 border-foreground bg-white/30 p-3">
-        <div
-          ref={trackRef}
-          className={`flex snap-x snap-mandatory gap-3 overflow-x-auto scroll-smooth pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
-          onPointerLeave={(event) => {
-            if (dragState.current.isDragging) {
-              endDrag(event);
-            }
-          }}
-        >
-          {sponsors.map((sponsor) => {
-            const content = (
-              <div
-                className={`impact-belt-chip min-h-[88px] min-w-[220px] snap-start justify-center gap-3 rounded-[1.4rem] px-5 py-4 md:min-w-[250px] ${chipClass}`}
-              >
-                {sponsor.logo ? (
-                  <img
-                    src={sponsor.logo}
-                    alt={sponsor.name}
-                    className="h-10 max-w-[130px] object-contain"
-                    draggable={false}
-                  />
-                ) : null}
-                <span className="text-sm font-semibold">{sponsor.name}</span>
-              </div>
-            );
-
-            return sponsor.href ? (
-              <a
-                key={sponsor.id}
-                href={sponsor.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="shrink-0"
-                draggable={false}
-              >
-                {content}
-              </a>
-            ) : (
-              <div key={sponsor.id} className="shrink-0" draggable={false}>
-                {content}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const EventCard = ({
-  event,
-}: {
-  event: HomeEvent;
-}) => {
-  const eventImage = event.image ?? stemKitsShowcase;
-  const accentTheme = event.accentTheme ?? "blue";
-  const toneClass = eventAccentStyles[accentTheme];
-
-  return (
-    <article className={`play-card offset-card overflow-hidden rounded-[2.3rem] ${toneClass}`}>
-      <div className="grid gap-0 xl:grid-cols-[minmax(0,1.15fr)_420px]">
-        <div className="p-7 md:p-9">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border-2 border-foreground bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-foreground">
-              {event.status}
-            </span>
-            <span className="rounded-full border-2 border-foreground bg-white px-3 py-1 text-xs font-semibold text-foreground">
-              {event.date}
-            </span>
-            <span className="rounded-full border-2 border-foreground bg-white px-3 py-1 text-xs font-semibold text-foreground">
-              {event.location}
-            </span>
-          </div>
-
-          <div className="mt-6 max-w-3xl">
-            <h3 className="text-4xl font-semibold md:text-5xl">{event.title}</h3>
-            <p className="mt-5 text-base leading-8 opacity-90 md:text-lg">
-              {event.description}
-            </p>
-            {event.href && event.hrefLabel ? (
-              <Button variant="outline" asChild className="mt-7 w-fit bg-white">
-                <Link to={event.href}>{event.hrefLabel}</Link>
-              </Button>
-            ) : null}
-          </div>
-
-          <SponsorCarousel sponsors={event.sponsors ?? []} accentTheme={accentTheme} />
-        </div>
-
-        <div className="border-t-2 border-foreground xl:border-l-2 xl:border-t-0">
-          <div className="h-full min-h-[280px] overflow-hidden bg-white xl:min-h-[100%]">
-            <img
-              src={eventImage}
-              alt={event.imageAlt ?? event.title}
-              className="h-full w-full object-cover"
-            />
-          </div>
-        </div>
-      </div>
-    </article>
-  );
-};
 
 const DiscordGlyph = () => (
   <svg
@@ -240,7 +34,8 @@ const DiscordGlyph = () => (
 );
 
 const Index = () => {
-  const { data: liveEvents } = useSiteContentQuery("home_events");
+  const { data: events } = useSiteContentQuery("events");
+  const featuredEvents = events.filter((event) => event.featuredOnHome);
 
   return (
     <div className="min-h-screen bg-background">
@@ -326,15 +121,23 @@ const Index = () => {
                 <span className="eyebrow">Open now</span>
                 <h2 className="section-title">Current STEMise events.</h2>
                 <p className="section-copy">
-                  See what STEMise is actively running right now, from open kit windows to current
-                  sessions and upcoming community activity.
+                  Featured events stay here on the homepage. The full events page holds the longer
+                  overview, sponsors, and collaborating professionals for every active event.
                 </p>
+              </div>
+              <div className="mt-8">
+                <Button variant="outline" asChild>
+                  <Link to="/events">
+                    View all events
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
               </div>
             </div>
 
-            <div data-scroll-reveal className="stagger-stack mt-12 space-y-7">
-              {liveEvents.map((event) => (
-                <EventCard key={event.id} event={event} />
+            <div data-scroll-reveal className="stagger-grid mt-12 grid gap-6 xl:grid-cols-2">
+              {featuredEvents.map((event) => (
+                <FeaturedEventCard key={event.id} event={event} />
               ))}
             </div>
           </div>

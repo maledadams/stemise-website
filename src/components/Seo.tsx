@@ -49,6 +49,7 @@ const Seo = ({
 
   const breadcrumbLabelMap: Record<string, string> = {
     "/": "Home",
+    "/events": "Events",
     "/about": "About",
     "/get-involved": "Get Involved",
     "/curriculum": "Curriculum",

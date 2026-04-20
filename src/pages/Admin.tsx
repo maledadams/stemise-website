@@ -48,6 +48,7 @@ import type {
   TeamMember,
 } from "@/lib/site-data";
 
+const LOCAL_DEV_EDIT_MODE = import.meta.env.DEV;
 const cloneValue = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const serializeSiteContent = (value: SiteContentMap) => JSON.stringify(value);
 
@@ -62,21 +63,32 @@ const makeId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}
 
 const createEmptyEvent = (): HomeEvent => ({
   id: makeId("event"),
+  slug: "",
   title: "",
   status: "Open now",
   date: "",
   location: "",
-  description: "",
+  shortDescription: "",
+  fullDescription: "",
+  featuredOnHome: false,
   accentTheme: "blue",
   href: "",
   hrefLabel: "",
   image: "",
   imageAlt: "",
   sponsors: [],
+  professionals: [],
 });
 
 const createEmptyEventSponsor = (): EventSponsor => ({
   id: makeId("event-sponsor"),
+  name: "",
+  logo: "",
+  href: "",
+});
+
+const createEmptyEventProfessional = (): EventSponsor => ({
+  id: makeId("event-professional"),
   name: "",
   logo: "",
   href: "",
@@ -160,7 +172,7 @@ const createEmptyCurriculumPage = (): CurriculumPage => ({
 });
 
 const sectionOrder: SiteContentKey[] = [
-  "home_events",
+  "events",
   "impact_metrics",
   "impact_countries",
   "kits",
@@ -271,6 +283,110 @@ const SectionShell = ({
   </Card>
 );
 
+const OrganizationListEditor = ({
+  title,
+  description,
+  items,
+  onAdd,
+  onChange,
+  onRemove,
+  onUpload,
+  uploadingField,
+  uploadFieldPrefix,
+}: {
+  title: string;
+  description: string;
+  items: EventSponsor[];
+  onAdd: () => void;
+  onChange: (index: number, updater: (item: EventSponsor) => EventSponsor) => void;
+  onRemove: (index: number) => void;
+  onUpload: (fieldKey: string, folder: string, onComplete: (url: string) => void, file: File) => Promise<void>;
+  uploadingField: string | null;
+  uploadFieldPrefix: string;
+}) => (
+  <div className="space-y-4">
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <div className="text-sm font-semibold text-foreground">{title}</div>
+        <div className="text-sm text-muted-foreground">{description}</div>
+      </div>
+      <Button type="button" variant="outline" onClick={onAdd}>
+        <Plus className="h-4 w-4" />
+        Add entry
+      </Button>
+    </div>
+
+    {items.length ? (
+      <div className="space-y-4">
+        {items.map((item, index) => (
+          <Card key={item.id} className="rounded-[1.4rem] border border-border bg-secondary/30">
+            <CardContent className="grid gap-4 p-4 lg:grid-cols-[1fr_320px]">
+              <div className="grid gap-4 md:grid-cols-2">
+                <Input
+                  value={item.name}
+                  onChange={(eventValue) =>
+                    onChange(index, (current) => ({
+                      ...current,
+                      name: eventValue.target.value,
+                    }))
+                  }
+                  placeholder="Name"
+                />
+                <Input
+                  value={item.href ?? ""}
+                  onChange={(eventValue) =>
+                    onChange(index, (current) => ({
+                      ...current,
+                      href: eventValue.target.value,
+                    }))
+                  }
+                  placeholder="Optional link"
+                />
+              </div>
+
+              <div className="space-y-3">
+                <AssetField
+                  label="Logo"
+                  value={item.logo ?? ""}
+                  onChange={(value) =>
+                    onChange(index, (current) => ({
+                      ...current,
+                      logo: value,
+                    }))
+                  }
+                  uploading={uploadingField === `${uploadFieldPrefix}-${index}`}
+                  onUpload={(file) =>
+                    onUpload(
+                      `${uploadFieldPrefix}-${index}`,
+                      uploadFieldPrefix.includes("professional") ? "events/professionals" : "events/sponsors",
+                      (url) =>
+                        onChange(index, (current) => ({
+                          ...current,
+                          logo: url,
+                        })),
+                      file,
+                    )
+                  }
+                />
+                <div className="flex justify-end">
+                  <Button type="button" variant="outline" onClick={() => onRemove(index)}>
+                    <Trash2 className="h-4 w-4" />
+                    Remove entry
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    ) : (
+      <div className="rounded-[1.4rem] border border-dashed border-border bg-secondary/30 px-4 py-5 text-sm text-muted-foreground">
+        No entries added yet.
+      </div>
+    )}
+  </div>
+);
+
 const isCountriesMetric = (label: string) => label.trim().toLowerCase() === "countries";
 
 const syncCountriesMetric = (
@@ -329,7 +445,7 @@ const Admin = () => {
   );
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [activeTab, setActiveTab] = useState<SiteContentKey>("home_events");
+  const [activeTab, setActiveTab] = useState<SiteContentKey>("events");
   const [availableCountryNames, setAvailableCountryNames] = useState<string[]>([]);
   const [countrySearch, setCountrySearch] = useState("");
   const [draggedTeamMemberId, setDraggedTeamMemberId] = useState<string | null>(null);
@@ -522,7 +638,9 @@ const Admin = () => {
       onComplete(url);
       toast({
         title: "Asset uploaded",
-        description: "The image is now stored in Supabase and linked into this section.",
+        description: LOCAL_DEV_EDIT_MODE
+          ? "The image is now attached to this local dev session."
+          : "The image is now stored in Supabase and linked into this section.",
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Upload failed.";
@@ -555,17 +673,21 @@ const Admin = () => {
 
       let publishWarning: string | null = null;
 
-      try {
-        await triggerRedeployAfterSave("all");
-      } catch (error) {
-        publishWarning = error instanceof Error ? error.message : "GitHub publish trigger failed.";
+      if (!LOCAL_DEV_EDIT_MODE) {
+        try {
+          await triggerRedeployAfterSave("all");
+        } catch (error) {
+          publishWarning = error instanceof Error ? error.message : "GitHub publish trigger failed.";
+        }
       }
 
       toast({
-        title: "All content saved",
-        description: publishWarning
-          ? `Everything was saved to Supabase, but the GitHub publish trigger failed: ${publishWarning}`
-          : "Everything was saved to Supabase and the GitHub publish workflow was triggered.",
+        title: LOCAL_DEV_EDIT_MODE ? "Local preview saved" : "All content saved",
+        description: LOCAL_DEV_EDIT_MODE
+          ? "Your edits were saved in this browser session only. Nothing was sent to Supabase or GitHub."
+          : publishWarning
+            ? `Everything was saved to Supabase, but the GitHub publish trigger failed: ${publishWarning}`
+            : "Everything was saved to Supabase and the GitHub publish workflow was triggered.",
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Save failed.";
@@ -780,7 +902,7 @@ const Admin = () => {
     }
   };
 
-  if (!isSupabaseConfigured || !supabase) {
+  if (!LOCAL_DEV_EDIT_MODE && (!isSupabaseConfigured || !supabase)) {
     return (
       <div className="min-h-screen bg-background">
         <Seo title="Admin" pathname="/admin" noIndex />
@@ -982,8 +1104,9 @@ const Admin = () => {
                   </div>
                   <CardTitle className="mt-4 text-4xl">Edit live STEMise site content.</CardTitle>
                   <CardDescription className="mt-2 max-w-3xl text-base leading-7">
-                    This editor updates the homepage events, impact metrics, world map countries, kits, workshops,
-                    supporters, and team members through Supabase. Your edits stay in this tab until you save them.
+                    {LOCAL_DEV_EDIT_MODE
+                      ? "This local editor lets you preview the shared events system, impact metrics, world map countries, kits, workshops, supporters, team members, and curriculum content without touching Supabase. Your edits stay in this browser session until you close it or replace them."
+                      : "This editor updates the shared events system, impact metrics, world map countries, kits, workshops, supporters, team members, and curriculum content through Supabase. Your edits stay in this tab until you save them."}
                   </CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-3">
@@ -1019,78 +1142,96 @@ const Admin = () => {
               ))}
             </TabsList>
 
-            <TabsContent value="home_events">
+            <TabsContent value="events">
               <SectionShell
-                title="Home events"
-                description="Edit the long-form homepage event sections, including per-event accent styling, images, and sponsor conveyor rows."
-                onReset={() => handleResetSection("home_events")}
+                title="Events"
+                description="Manage the single source of truth for STEMise events. Each event can have full details, sponsors, collaborating professionals, and a toggle that decides whether it appears on the homepage."
+                onReset={() => handleResetSection("events")}
               >
                 <div className="flex justify-end">
-                  <Button type="button" variant="outline" onClick={() => appendArrayItem("home_events", createEmptyEvent())}>
+                  <Button type="button" variant="outline" onClick={() => appendArrayItem("events", createEmptyEvent())}>
                     <Plus className="h-4 w-4" />
                     Add event
                   </Button>
                 </div>
                 <div className="space-y-6">
-                  {content.home_events.map((event, index) => (
+                  {content.events.map((event, index) => (
                     <Card key={event.id} className="rounded-[1.8rem] border-2 border-foreground bg-white">
-                        <CardHeader className="flex flex-row items-start justify-between gap-4">
-                          <div>
-                            <CardTitle className="text-2xl">{event.title || `Event ${index + 1}`}</CardTitle>
-                            <CardDescription>Edit the homepage event section, accent styling, and sponsor row.</CardDescription>
-                          </div>
-                        <Button type="button" variant="outline" onClick={() => removeArrayItem("home_events", index)}>
+                      <CardHeader className="flex flex-row items-start justify-between gap-4">
+                        <div>
+                          <CardTitle className="text-2xl">{event.title || `Event ${index + 1}`}</CardTitle>
+                          <CardDescription>
+                            Edit the full event record. The homepage only uses events that are marked as featured.
+                          </CardDescription>
+                        </div>
+                        <Button type="button" variant="outline" onClick={() => removeArrayItem("events", index)}>
                           <Trash2 className="h-4 w-4" />
                           Remove
                         </Button>
                       </CardHeader>
-                        <CardContent className="grid gap-6 xl:grid-cols-[1fr_360px]">
+                      <CardContent className="space-y-6">
+                        <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
                           <div className="grid gap-4 md:grid-cols-2">
                             <Input
                               value={event.title}
-                            onChange={(eventValue) =>
-                              updateArrayItem("home_events", index, (current) => ({
-                                ...current,
-                                title: eventValue.target.value,
-                                id: current.id || slugify(eventValue.target.value) || makeId("event"),
-                              }))
-                            }
-                            placeholder="Title"
-                          />
-                          <Input
-                            value={event.status}
-                            onChange={(eventValue) =>
-                              updateArrayItem("home_events", index, (current) => ({
-                                ...current,
-                                status: eventValue.target.value,
-                              }))
-                            }
-                            placeholder="Status"
-                          />
-                          <Input
-                            value={event.date}
-                            onChange={(eventValue) =>
-                              updateArrayItem("home_events", index, (current) => ({
-                                ...current,
-                                date: eventValue.target.value,
-                              }))
-                            }
-                            placeholder="Date"
-                          />
-                          <Input
-                            value={event.location}
-                            onChange={(eventValue) =>
-                              updateArrayItem("home_events", index, (current) => ({
-                                ...current,
-                                location: eventValue.target.value,
-                              }))
-                            }
+                              onChange={(eventValue) =>
+                                updateArrayItem("events", index, (current) => {
+                                  const nextTitle = eventValue.target.value;
+                                  const nextSlug = current.slug || slugify(nextTitle) || current.id;
+
+                                  return {
+                                    ...current,
+                                    title: nextTitle,
+                                    slug: nextSlug,
+                                  };
+                                })
+                              }
+                              placeholder="Title"
+                            />
+                            <Input
+                              value={event.slug}
+                              onChange={(eventValue) =>
+                                updateArrayItem("events", index, (current) => ({
+                                  ...current,
+                                  slug: slugify(eventValue.target.value),
+                                }))
+                              }
+                              placeholder="Slug"
+                            />
+                            <Input
+                              value={event.status}
+                              onChange={(eventValue) =>
+                                updateArrayItem("events", index, (current) => ({
+                                  ...current,
+                                  status: eventValue.target.value,
+                                }))
+                              }
+                              placeholder="Status"
+                            />
+                            <Input
+                              value={event.date}
+                              onChange={(eventValue) =>
+                                updateArrayItem("events", index, (current) => ({
+                                  ...current,
+                                  date: eventValue.target.value,
+                                }))
+                              }
+                              placeholder="Date"
+                            />
+                            <Input
+                              value={event.location}
+                              onChange={(eventValue) =>
+                                updateArrayItem("events", index, (current) => ({
+                                  ...current,
+                                  location: eventValue.target.value,
+                                }))
+                              }
                               placeholder="Location"
                             />
                             <select
                               value={event.accentTheme ?? "blue"}
                               onChange={(eventValue) =>
-                                updateArrayItem("home_events", index, (current) => ({
+                                updateArrayItem("events", index, (current) => ({
                                   ...current,
                                   accentTheme: eventValue.target.value as HomeEvent["accentTheme"],
                                 }))
@@ -1105,191 +1246,159 @@ const Admin = () => {
                             <Input
                               value={event.href ?? ""}
                               onChange={(eventValue) =>
-                              updateArrayItem("home_events", index, (current) => ({
-                                ...current,
-                                href: eventValue.target.value,
-                              }))
-                            }
-                            placeholder="Button link"
-                          />
-                          <Input
-                            value={event.hrefLabel ?? ""}
-                            onChange={(eventValue) =>
-                              updateArrayItem("home_events", index, (current) => ({
-                                ...current,
-                                hrefLabel: eventValue.target.value,
-                              }))
-                            }
-                            placeholder="Button label"
-                          />
-                          <Textarea
-                            className="md:col-span-2 min-h-[140px]"
-                            value={event.description}
-                            onChange={(eventValue) =>
-                              updateArrayItem("home_events", index, (current) => ({
-                                ...current,
-                                description: eventValue.target.value,
-                              }))
-                            }
-                            placeholder="Description"
-                          />
-                          <Input
-                            className="md:col-span-2"
-                            value={event.imageAlt ?? ""}
-                            onChange={(eventValue) =>
-                              updateArrayItem("home_events", index, (current) => ({
-                                ...current,
-                                imageAlt: eventValue.target.value,
-                              }))
-                            }
-                            placeholder="Image alt text"
-                          />
-                        </div>
+                                updateArrayItem("events", index, (current) => ({
+                                  ...current,
+                                  href: eventValue.target.value,
+                                }))
+                              }
+                              placeholder="Optional event link"
+                            />
+                            <Input
+                              value={event.hrefLabel ?? ""}
+                              onChange={(eventValue) =>
+                                updateArrayItem("events", index, (current) => ({
+                                  ...current,
+                                  hrefLabel: eventValue.target.value,
+                                }))
+                              }
+                              placeholder="Optional event link label"
+                            />
+                            <label className="md:col-span-2 flex items-center gap-3 rounded-[1rem] border border-input bg-secondary/40 px-4 py-3 text-sm font-medium text-foreground">
+                              <input
+                                type="checkbox"
+                                checked={event.featuredOnHome}
+                                onChange={(eventValue) =>
+                                  updateArrayItem("events", index, (current) => ({
+                                    ...current,
+                                    featuredOnHome: eventValue.target.checked,
+                                  }))
+                                }
+                                className="h-4 w-4 rounded border-border"
+                              />
+                              Show this event on the homepage
+                            </label>
+                            <Textarea
+                              className="md:col-span-2 min-h-[120px]"
+                              value={event.shortDescription}
+                              onChange={(eventValue) =>
+                                updateArrayItem("events", index, (current) => ({
+                                  ...current,
+                                  shortDescription: eventValue.target.value,
+                                }))
+                              }
+                              placeholder="Short description for homepage and event intro"
+                            />
+                            <Textarea
+                              className="md:col-span-2 min-h-[180px]"
+                              value={event.fullDescription}
+                              onChange={(eventValue) =>
+                                updateArrayItem("events", index, (current) => ({
+                                  ...current,
+                                  fullDescription: eventValue.target.value,
+                                }))
+                              }
+                              placeholder="Full event description for the /events page"
+                            />
+                            <Input
+                              className="md:col-span-2"
+                              value={event.imageAlt ?? ""}
+                              onChange={(eventValue) =>
+                                updateArrayItem("events", index, (current) => ({
+                                  ...current,
+                                  imageAlt: eventValue.target.value,
+                                }))
+                              }
+                              placeholder="Image alt text"
+                            />
+                          </div>
 
                           <AssetField
                             label="Event image"
-                          value={event.image ?? ""}
-                          onChange={(value) =>
-                            updateArrayItem("home_events", index, (current) => ({
-                              ...current,
-                              image: value,
-                            }))
-                          }
-                          uploading={uploadingField === `event-image-${index}`}
-                          onUpload={(file) =>
-                            handleUpload(
-                              `event-image-${index}`,
-                              "events",
-                              (url) =>
-                                updateArrayItem("home_events", index, (current) => ({
-                                  ...current,
-                                  image: url,
-                                })),
-                              file,
-                            )
+                            value={event.image ?? ""}
+                            onChange={(value) =>
+                              updateArrayItem("events", index, (current) => ({
+                                ...current,
+                                image: value,
+                              }))
+                            }
+                            uploading={uploadingField === `event-image-${index}`}
+                            onUpload={(file) =>
+                              handleUpload(
+                                `event-image-${index}`,
+                                "events",
+                                (url) =>
+                                  updateArrayItem("events", index, (current) => ({
+                                    ...current,
+                                    image: url,
+                                  })),
+                                file,
+                              )
                             }
                           />
+                        </div>
 
-                          <div className="xl:col-span-2 space-y-4">
-                            <div className="flex items-center justify-between gap-3">
-                              <div>
-                                <div className="text-sm font-semibold text-foreground">Sponsors</div>
-                                <div className="text-sm text-muted-foreground">
-                                  Add sponsor logos for the conveyor row shown inside this event.
-                                </div>
-                              </div>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() =>
-                                  updateArrayItem("home_events", index, (current) => ({
-                                    ...current,
-                                    sponsors: [...(current.sponsors ?? []), createEmptyEventSponsor()],
-                                  }))
-                                }
-                              >
-                                <Plus className="h-4 w-4" />
-                                Add sponsor
-                              </Button>
-                            </div>
+                        <div className="grid gap-6 xl:grid-cols-2">
+                          <OrganizationListEditor
+                            title="Backed by"
+                            description="Sponsors and backing organizations shown on the /events page and condensed on featured homepage cards."
+                            items={event.sponsors ?? []}
+                            onAdd={() =>
+                              updateArrayItem("events", index, (current) => ({
+                                ...current,
+                                sponsors: [...(current.sponsors ?? []), createEmptyEventSponsor()],
+                              }))
+                            }
+                            onChange={(entryIndex, updater) =>
+                              updateArrayItem("events", index, (current) => ({
+                                ...current,
+                                sponsors: (current.sponsors ?? []).map((entry, currentIndex) =>
+                                  currentIndex === entryIndex ? updater(entry) : entry,
+                                ),
+                              }))
+                            }
+                            onRemove={(entryIndex) =>
+                              updateArrayItem("events", index, (current) => ({
+                                ...current,
+                                sponsors: (current.sponsors ?? []).filter((_, currentIndex) => currentIndex !== entryIndex),
+                              }))
+                            }
+                            onUpload={handleUpload}
+                            uploadingField={uploadingField}
+                            uploadFieldPrefix={`event-sponsor-${index}`}
+                          />
 
-                            {(event.sponsors ?? []).length ? (
-                              <div className="space-y-4">
-                                {(event.sponsors ?? []).map((sponsor, sponsorIndex) => (
-                                  <Card key={sponsor.id} className="rounded-[1.4rem] border border-border bg-secondary/30">
-                                    <CardContent className="grid gap-4 p-4 lg:grid-cols-[1fr_320px]">
-                                      <div className="grid gap-4 md:grid-cols-2">
-                                        <Input
-                                          value={sponsor.name}
-                                          onChange={(eventValue) =>
-                                            updateArrayItem("home_events", index, (current) => ({
-                                              ...current,
-                                              sponsors: (current.sponsors ?? []).map((entry, entryIndex) =>
-                                                entryIndex === sponsorIndex
-                                                  ? { ...entry, name: eventValue.target.value }
-                                                  : entry,
-                                              ),
-                                            }))
-                                          }
-                                          placeholder="Sponsor name"
-                                        />
-                                        <Input
-                                          value={sponsor.href ?? ""}
-                                          onChange={(eventValue) =>
-                                            updateArrayItem("home_events", index, (current) => ({
-                                              ...current,
-                                              sponsors: (current.sponsors ?? []).map((entry, entryIndex) =>
-                                                entryIndex === sponsorIndex
-                                                  ? { ...entry, href: eventValue.target.value }
-                                                  : entry,
-                                              ),
-                                            }))
-                                          }
-                                          placeholder="Sponsor link"
-                                        />
-                                      </div>
-
-                                      <div className="space-y-3">
-                                        <AssetField
-                                          label="Sponsor logo"
-                                          value={sponsor.logo ?? ""}
-                                          onChange={(value) =>
-                                            updateArrayItem("home_events", index, (current) => ({
-                                              ...current,
-                                              sponsors: (current.sponsors ?? []).map((entry, entryIndex) =>
-                                                entryIndex === sponsorIndex
-                                                  ? { ...entry, logo: value }
-                                                  : entry,
-                                              ),
-                                            }))
-                                          }
-                                          uploading={uploadingField === `event-sponsor-${index}-${sponsorIndex}`}
-                                          onUpload={(file) =>
-                                            handleUpload(
-                                              `event-sponsor-${index}-${sponsorIndex}`,
-                                              "events/sponsors",
-                                              (url) =>
-                                                updateArrayItem("home_events", index, (current) => ({
-                                                  ...current,
-                                                  sponsors: (current.sponsors ?? []).map((entry, entryIndex) =>
-                                                    entryIndex === sponsorIndex
-                                                      ? { ...entry, logo: url }
-                                                      : entry,
-                                                  ),
-                                                })),
-                                              file,
-                                            )
-                                          }
-                                        />
-                                        <div className="flex justify-end">
-                                          <Button
-                                            type="button"
-                                            variant="outline"
-                                            onClick={() =>
-                                              updateArrayItem("home_events", index, (current) => ({
-                                                ...current,
-                                                sponsors: (current.sponsors ?? []).filter((_, entryIndex) => entryIndex !== sponsorIndex),
-                                              }))
-                                            }
-                                          >
-                                            <Trash2 className="h-4 w-4" />
-                                            Remove sponsor
-                                          </Button>
-                                        </div>
-                                      </div>
-                                    </CardContent>
-                                  </Card>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="rounded-[1.4rem] border border-dashed border-border bg-secondary/30 px-4 py-5 text-sm text-muted-foreground">
-                                No sponsors added yet for this event.
-                              </div>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                          <OrganizationListEditor
+                            title="Collaborated with professionals from:"
+                            description="Judges, mentors, or professional collaborators shown on the full events page."
+                            items={event.professionals ?? []}
+                            onAdd={() =>
+                              updateArrayItem("events", index, (current) => ({
+                                ...current,
+                                professionals: [...(current.professionals ?? []), createEmptyEventProfessional()],
+                              }))
+                            }
+                            onChange={(entryIndex, updater) =>
+                              updateArrayItem("events", index, (current) => ({
+                                ...current,
+                                professionals: (current.professionals ?? []).map((entry, currentIndex) =>
+                                  currentIndex === entryIndex ? updater(entry) : entry,
+                                ),
+                              }))
+                            }
+                            onRemove={(entryIndex) =>
+                              updateArrayItem("events", index, (current) => ({
+                                ...current,
+                                professionals: (current.professionals ?? []).filter((_, currentIndex) => currentIndex !== entryIndex),
+                              }))
+                            }
+                            onUpload={handleUpload}
+                            uploadingField={uploadingField}
+                            uploadFieldPrefix={`event-professional-${index}`}
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
                 </div>
               </SectionShell>
             </TabsContent>

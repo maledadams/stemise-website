@@ -12,6 +12,7 @@ const defaultRouteMeta = { changefreq: "weekly", priority: "0.7" };
 const excludedStaticRoutes = new Set(["/admin"]);
 const routeMetaOverrides = {
   "/": { changefreq: "weekly", priority: "1.0" },
+  "/events": { changefreq: "weekly", priority: "0.85" },
   "/kits": { changefreq: "weekly", priority: "0.9" },
   "/curriculum": { changefreq: "weekly", priority: "0.9" },
   "/get-involved": { changefreq: "weekly", priority: "0.8" },

@@ -2,11 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import {
   homeImpactMetrics,
   homeImpactCountries,
-  homeLiveEvents,
   kitCatalog,
   partnerLogos,
+  siteEvents,
   teamMembers,
-  type HomeEvent,
+  type SiteEvent,
+  type EventOrganization,
   type HomeImpactCountry,
   type HomeImpactMetric,
   type KitCatalogItem,
@@ -33,7 +34,7 @@ export type WorkshopItem = {
 };
 
 export type SiteContentKey =
-  | "home_events"
+  | "events"
   | "impact_metrics"
   | "impact_countries"
   | "kits"
@@ -44,7 +45,7 @@ export type SiteContentKey =
   | "curriculum_pages";
 
 export type SiteContentMap = {
-  home_events: HomeEvent[];
+  events: SiteEvent[];
   impact_metrics: HomeImpactMetric[];
   impact_countries: HomeImpactCountry[];
   kits: KitCatalogItem[];
@@ -67,6 +68,7 @@ type SiteContentStateReadOptions = {
 const SITE_CONTENT_ROW_ID = 1;
 const SITE_ASSET_PUBLIC_SEGMENT = "/storage/v1/object/public/site-assets/";
 const SITE_CONTENT_CACHE_KEY = "stemise:site-content-cache";
+const DEV_SITE_CONTENT_SESSION_KEY = "stemise:dev-site-content";
 const SITE_CONTENT_STALE_TIME_MS = 60_000;
 const SITE_CONTENT_GC_TIME_MS = 10 * 60_000;
 const OPTIMIZABLE_IMAGE_TYPES = new Set(["image/jpeg", "image/png"]);
@@ -78,6 +80,7 @@ const JPEG_UPLOAD_QUALITY = 0.76;
 const IMAGE_OPTIMIZATION_TIMEOUT_MS = 12_000;
 const STORAGE_UPLOAD_TIMEOUT_MS = 45_000;
 const ADMIN_AUTH_ERROR_MESSAGE = "Your admin session is no longer authorized. Open the latest magic link and sign in again.";
+const LOCAL_DEV_EDIT_MODE = import.meta.env.DEV;
 
 const cloneValue = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -118,6 +121,23 @@ const readCachedSiteContent = (): SiteContentMap | null => {
 
 export const hasCachedSiteContent = () => Boolean(readCachedSiteContent());
 
+const readDevSessionSiteContent = (): SiteContentMap | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(DEV_SITE_CONTENT_SESSION_KEY);
+    if (!rawValue) {
+      return null;
+    }
+
+    return normalizeSiteContentState(JSON.parse(rawValue) as Partial<Record<SiteContentKey, unknown>>);
+  } catch {
+    return null;
+  }
+};
+
 const hasBuildSiteContentSnapshot = () =>
   Boolean(
     SITE_CONTENT_BUILD_SNAPSHOT &&
@@ -145,6 +165,18 @@ const persistCachedSiteContent = (payload: SiteContentMap) => {
     window.localStorage.setItem(SITE_CONTENT_CACHE_KEY, JSON.stringify(payload));
   } catch {
     // Ignore storage write failures so content reads and saves still work.
+  }
+};
+
+const persistDevSessionSiteContent = (payload: SiteContentMap) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(DEV_SITE_CONTENT_SESSION_KEY, JSON.stringify(payload));
+  } catch {
+    // Ignore browser storage failures in local edit mode.
   }
 };
 
@@ -260,7 +292,7 @@ const optimizeImageForUpload = async (file: File, folder: string): Promise<File>
 };
 
 const fallbackEventAssetMap = new Map(
-  homeLiveEvents.map((event) => [
+  siteEvents.map((event) => [
     event.id,
     {
       image: event.image,
@@ -337,18 +369,29 @@ const shouldReplaceWithFallbackAsset = (value: string | undefined) => {
   return false;
 };
 
-const normalizeHomeEvents = (events: HomeEvent[]): HomeEvent[] =>
+const normalizeEventOrganizations = (organizations: EventOrganization[] = []): EventOrganization[] =>
+  organizations.map((organization) => ({
+    ...organization,
+  }));
+
+const normalizeEvents = (events: SiteEvent[]): SiteEvent[] =>
   events.map((event) => {
     const fallbackAsset = fallbackEventAssetMap.get(event.id);
+    const shortDescription = event.shortDescription || (event as SiteEvent & { description?: string }).description || "";
+    const fullDescription = event.fullDescription || shortDescription;
+    const slug = event.slug || event.id || shortDescription.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
     return {
       ...event,
+      slug,
       accentTheme: event.accentTheme || "blue",
+      shortDescription,
+      fullDescription,
+      featuredOnHome: event.featuredOnHome ?? true,
       image: shouldReplaceWithFallbackAsset(event.image) ? fallbackAsset?.image ?? event.image : event.image,
       imageAlt: event.imageAlt || fallbackAsset?.imageAlt || "",
-      sponsors: (event.sponsors ?? []).map((sponsor) => ({
-        ...sponsor,
-      })),
+      sponsors: normalizeEventOrganizations(event.sponsors ?? []),
+      professionals: normalizeEventOrganizations(event.professionals ?? []),
     };
   });
 
@@ -385,8 +428,8 @@ const normalizeContentAssets = <K extends SiteContentKey>(
   payload: SiteContentMap[K],
 ): SiteContentMap[K] => {
   switch (key) {
-    case "home_events":
-      return normalizeHomeEvents(payload as HomeEvent[]) as SiteContentMap[K];
+    case "events":
+      return normalizeEvents(payload as SiteEvent[]) as SiteContentMap[K];
     case "kits":
       return normalizeKits(payload as KitCatalogItem[]) as SiteContentMap[K];
     case "supporters":
@@ -445,9 +488,9 @@ const syncImageBackedContentToStorage = async <K extends SiteContentKey>(
   const cache = new Map<string, string>();
 
   switch (key) {
-    case "home_events":
+    case "events":
       return (await Promise.all(
-        (payload as HomeEvent[]).map(async (event) => ({
+        (payload as SiteEvent[]).map(async (event) => ({
           ...event,
           image: event.image
             ? await syncAssetUrlToSupabase(event.image, "events", event.id || "event-image", cache)
@@ -463,6 +506,19 @@ const syncImageBackedContentToStorage = async <K extends SiteContentKey>(
                     cache,
                   )
                 : sponsor.logo,
+            })),
+          ),
+          professionals: await Promise.all(
+            (event.professionals ?? []).map(async (professional) => ({
+              ...professional,
+              logo: professional.logo
+                ? await syncAssetUrlToSupabase(
+                    professional.logo,
+                    "events/professionals",
+                    professional.id || `${event.id}-professional`,
+                    cache,
+                  )
+                : professional.logo,
             })),
           ),
         })),
@@ -509,7 +565,7 @@ const syncImageBackedContentToStorage = async <K extends SiteContentKey>(
 };
 
 export const fallbackSiteContent: SiteContentMap = {
-  home_events: homeLiveEvents,
+  events: siteEvents,
   impact_metrics: homeImpactMetrics,
   impact_countries: homeImpactCountries,
   kits: kitCatalog,
@@ -521,7 +577,7 @@ export const fallbackSiteContent: SiteContentMap = {
 };
 
 export const emptySiteContent: SiteContentMap = {
-  home_events: [],
+  events: [],
   impact_metrics: [],
   impact_countries: [],
   kits: [],
@@ -536,7 +592,7 @@ const createBaseSiteContentState = () =>
   cloneValue(isSupabaseConfigured ? emptySiteContent : fallbackSiteContent);
 
 export const siteContentLabels: Record<SiteContentKey, string> = {
-  home_events: "Home events",
+  events: "Events",
   impact_metrics: "Impact metrics",
   impact_countries: "World map",
   kits: "Kits",
@@ -548,6 +604,20 @@ export const siteContentLabels: Record<SiteContentKey, string> = {
 };
 
 const getInitialSiteContentState = () => {
+  if (LOCAL_DEV_EDIT_MODE) {
+    const devSessionContent = readDevSessionSiteContent();
+    if (devSessionContent) {
+      return cloneValue(devSessionContent);
+    }
+
+    const buildSnapshot = readBuildSiteContentSnapshot();
+    if (buildSnapshot) {
+      return cloneValue(buildSnapshot);
+    }
+
+    return cloneValue(fallbackSiteContent);
+  }
+
   if (!isSupabaseConfigured) {
     return cloneValue(fallbackSiteContent);
   }
@@ -575,6 +645,49 @@ export const normalizeSiteContent = <K extends SiteContentKey>(
   return normalizeContentAssets(key, payload as SiteContentMap[K]);
 };
 
+const legacyHomeEventToSiteEvent = (event: Record<string, unknown>): SiteEvent => {
+  const rawId = typeof event.id === "string" ? event.id : crypto.randomUUID();
+  const title = typeof event.title === "string" ? event.title : "";
+  const description = typeof event.description === "string" ? event.description : "";
+
+  return {
+    id: rawId,
+    slug:
+      (typeof event.slug === "string" && event.slug) ||
+      rawId ||
+      title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""),
+    title,
+    status: typeof event.status === "string" ? event.status : "",
+    date: typeof event.date === "string" ? event.date : "",
+    location: typeof event.location === "string" ? event.location : "",
+    shortDescription:
+      (typeof event.shortDescription === "string" && event.shortDescription) ||
+      description,
+    fullDescription:
+      (typeof event.fullDescription === "string" && event.fullDescription) ||
+      description,
+    featuredOnHome:
+      typeof event.featuredOnHome === "boolean"
+        ? event.featuredOnHome
+        : true,
+    accentTheme:
+      event.accentTheme === "blue" ||
+      event.accentTheme === "orange" ||
+      event.accentTheme === "lime" ||
+      event.accentTheme === "ink"
+        ? event.accentTheme
+        : "blue",
+    href: typeof event.href === "string" ? event.href : "",
+    hrefLabel: typeof event.hrefLabel === "string" ? event.hrefLabel : "",
+    image: typeof event.image === "string" ? event.image : "",
+    imageAlt: typeof event.imageAlt === "string" ? event.imageAlt : "",
+    sponsors: Array.isArray(event.sponsors) ? normalizeEventOrganizations(event.sponsors as EventOrganization[]) : [],
+    professionals: Array.isArray(event.professionals)
+      ? normalizeEventOrganizations(event.professionals as EventOrganization[])
+      : [],
+  };
+};
+
 const normalizeSiteContentState = (
   payload: Partial<Record<SiteContentKey, unknown>> | null | undefined,
 ): SiteContentMap => {
@@ -585,7 +698,20 @@ const normalizeSiteContentState = (
   }
 
   (Object.keys(fallbackSiteContent) as SiteContentKey[]).forEach((key) => {
-    nextContent[key] = normalizeSiteContent(key, payload[key]);
+    const sourcePayload =
+      key === "events" && !Array.isArray(payload[key])
+        ? (payload as Partial<Record<"home_events", unknown>>).home_events
+        : payload[key];
+
+    if (key === "events" && Array.isArray(sourcePayload) && !Array.isArray(payload[key])) {
+      nextContent[key] = normalizeContentAssets(
+        key,
+        sourcePayload.map((event) => legacyHomeEventToSiteEvent(event as Record<string, unknown>)) as SiteContentMap[typeof key],
+      );
+      return;
+    }
+
+    nextContent[key] = normalizeSiteContent(key, sourcePayload);
   });
 
   return nextContent;
@@ -627,6 +753,10 @@ const fetchSiteContentStateRow = async (
 export const fetchSiteContent = async <K extends SiteContentKey>(
   key: K,
 ): Promise<SiteContentMap[K]> => {
+  if (LOCAL_DEV_EDIT_MODE) {
+    return getInitialSiteContentState()[key];
+  }
+
   if (!supabase || !isSupabaseConfigured) {
     return getFallbackSiteContent(key);
   }
@@ -639,6 +769,10 @@ export const fetchSiteContent = async <K extends SiteContentKey>(
 };
 
 export const fetchAllSiteContent = async (): Promise<SiteContentMap> => {
+  if (LOCAL_DEV_EDIT_MODE) {
+    return getInitialSiteContentState();
+  }
+
   if (!supabase || !isSupabaseConfigured) {
     return cloneValue(fallbackSiteContent);
   }
@@ -655,7 +789,7 @@ const syncAllImageBackedContentToStorage = async (
 ): Promise<SiteContentMap> => {
   const nextPayload = cloneValue(payload);
 
-  nextPayload.home_events = await syncImageBackedContentToStorage("home_events", nextPayload.home_events);
+  nextPayload.events = await syncImageBackedContentToStorage("events", nextPayload.events);
   nextPayload.kits = await syncImageBackedContentToStorage("kits", nextPayload.kits);
   nextPayload.supporters = await syncImageBackedContentToStorage("supporters", nextPayload.supporters);
   nextPayload.team_members = await syncImageBackedContentToStorage("team_members", nextPayload.team_members);
@@ -665,6 +799,13 @@ const syncAllImageBackedContentToStorage = async (
 };
 
 export const saveAllSiteContent = async (payload: SiteContentMap): Promise<SiteContentMap> => {
+  if (LOCAL_DEV_EDIT_MODE) {
+    const nextPayload = cloneValue(payload);
+    persistDevSessionSiteContent(nextPayload);
+    persistCachedSiteContent(nextPayload);
+    return nextPayload;
+  }
+
   if (!supabase || !isSupabaseConfigured) {
     throw new Error("Supabase is not configured.");
   }
@@ -706,6 +847,18 @@ export const saveSiteContent = async <K extends SiteContentKey>(
   key: K,
   payload: SiteContentMap[K],
 ): Promise<void> => {
+  if (LOCAL_DEV_EDIT_MODE) {
+    const currentContent = getInitialSiteContentState();
+    const nextPayload: SiteContentMap = {
+      ...currentContent,
+      [key]: cloneValue(payload),
+    };
+
+    persistDevSessionSiteContent(nextPayload);
+    persistCachedSiteContent(nextPayload);
+    return;
+  }
+
   if (!supabase || !isSupabaseConfigured) {
     throw new Error("Supabase is not configured.");
   }
@@ -719,7 +872,7 @@ export const saveSiteContent = async <K extends SiteContentKey>(
       [key]: syncedPayload,
     };
 
-    nextPayload.home_events = await syncImageBackedContentToStorage("home_events", nextPayload.home_events);
+    nextPayload.events = await syncImageBackedContentToStorage("events", nextPayload.events);
     nextPayload.kits = await syncImageBackedContentToStorage("kits", nextPayload.kits);
     nextPayload.supporters = await syncImageBackedContentToStorage("supporters", nextPayload.supporters);
     nextPayload.team_members = await syncImageBackedContentToStorage("team_members", nextPayload.team_members);
@@ -754,6 +907,18 @@ export const saveSiteContent = async <K extends SiteContentKey>(
 };
 
 export const uploadSiteAsset = async (file: File, folder: string): Promise<string> => {
+  if (LOCAL_DEV_EDIT_MODE) {
+    const uploadFile = await optimizeImageForUpload(file, folder);
+
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () =>
+        resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(new Error("Could not read the image locally."));
+      reader.readAsDataURL(uploadFile);
+    });
+  }
+
   if (!supabase || !isSupabaseConfigured) {
     throw new Error("Supabase is not configured.");
   }

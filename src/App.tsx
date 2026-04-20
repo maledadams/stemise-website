@@ -13,6 +13,7 @@ import EditModeToggle from "@/components/EditModeToggle";
 import SiteContentGate from "@/components/SiteContentGate";
 
 const Index = lazy(() => import("./pages/Index"));
+const Events = lazy(() => import("./pages/Events"));
 const About = lazy(() => import("./pages/About"));
 const GetInvolved = lazy(() => import("./pages/GetInvolved"));
 const Courses = lazy(() => import("./pages/Courses"));
@@ -40,6 +41,7 @@ const App = () => (
               <PageTransition>
                 <Routes>
                   <Route path="/" element={<Index />} />
+                  <Route path="/events" element={<Events />} />
                   <Route path="/about" element={<About />} />
                   <Route path="/get-involved" element={<GetInvolved />} />
                   <Route path="/curriculum" element={<Courses />} />

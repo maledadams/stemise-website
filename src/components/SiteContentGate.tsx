@@ -5,11 +5,13 @@ import { Button } from "@/components/ui/button";
 import { hasWarmSiteContent, useAllSiteContentQuery } from "@/lib/site-content";
 import { isSupabaseConfigured } from "@/lib/supabase";
 
+const LOCAL_DEV_EDIT_MODE = import.meta.env.DEV;
+
 const SiteContentGate = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
   const warmContentExists = useMemo(() => hasWarmSiteContent(), []);
   const isAdminRoute = location.pathname.startsWith("/admin");
-  const shouldGate = isSupabaseConfigured && !warmContentExists && !isAdminRoute;
+  const shouldGate = !LOCAL_DEV_EDIT_MODE && isSupabaseConfigured && !warmContentExists && !isAdminRoute;
   const { isLoading, isFetching, error, refetch } = useAllSiteContentQuery();
 
   if (!shouldGate) {

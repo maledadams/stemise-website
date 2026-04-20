@@ -3,6 +3,7 @@ import type { Session } from "@supabase/supabase-js";
 import { getActiveSupabaseSession, supabase } from "@/lib/supabase";
 
 const ADMIN_RETURN_TO_KEY = "stemise:admin:return_to";
+const DEV_ADMIN_BYPASS = import.meta.env.DEV;
 
 type AdminAuthContextValue = {
   session: Session | null;
@@ -33,10 +34,18 @@ export const clearStoredAdminSessionState = () => {
 export const AdminAuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isAuthReady, setIsAuthReady] = useState(!supabase);
+  const [isAuthReady, setIsAuthReady] = useState(DEV_ADMIN_BYPASS || !supabase);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
 
   useEffect(() => {
+    if (DEV_ADMIN_BYPASS) {
+      setSession({} as Session);
+      setIsAdmin(true);
+      setIsAuthReady(true);
+      setIsAdminLoading(false);
+      return;
+    }
+
     if (!supabase) {
       setIsAuthReady(true);
       return;
@@ -83,6 +92,12 @@ export const AdminAuthProvider = ({ children }: { children: React.ReactNode }) =
   }, []);
 
   useEffect(() => {
+    if (DEV_ADMIN_BYPASS) {
+      setIsAdmin(true);
+      setIsAdminLoading(false);
+      return;
+    }
+
     if (!supabase || !isAuthReady) {
       return;
     }
@@ -129,18 +144,20 @@ export const AdminAuthProvider = ({ children }: { children: React.ReactNode }) =
     };
   }, [isAuthReady, session]);
 
-  const isLoading = !isAuthReady || isAdminLoading;
+  const resolvedSession = DEV_ADMIN_BYPASS ? ({} as Session) : session;
+  const resolvedIsAdmin = DEV_ADMIN_BYPASS ? true : isAdmin;
+  const isLoading = DEV_ADMIN_BYPASS ? false : !isAuthReady || isAdminLoading;
 
   const value = useMemo<AdminAuthContextValue>(
     () => ({
-      session,
+      session: resolvedSession,
       isLoading,
-      isAdmin,
-      isAuthenticated: Boolean(session && isAdmin),
+      isAdmin: resolvedIsAdmin,
+      isAuthenticated: DEV_ADMIN_BYPASS || Boolean(resolvedSession && resolvedIsAdmin),
       rememberReturnPath: rememberAdminReturnPath,
       getRememberedReturnPath: getRememberedAdminReturnPath,
     }),
-    [isAdmin, isLoading, session],
+    [isLoading, resolvedIsAdmin, resolvedSession],
   );
 
   return <AdminAuthContext.Provider value={value}>{children}</AdminAuthContext.Provider>;

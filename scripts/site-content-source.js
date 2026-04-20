@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 const SITE_CONTENT_ROW_ID = 1;
 
 const EMPTY_SITE_CONTENT_PAYLOAD = {
-  home_events: [],
+  events: [],
   impact_metrics: [],
   impact_countries: [],
   kits: [],
