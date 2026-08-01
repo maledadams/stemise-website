@@ -1,0 +1,33 @@
+name: Deploy portfolio mirror (Cloudflare Pages)
+
+# Deploys this repo's main branch to stemise.lucia-adams.com, a noindex
+# portfolio mirror on Cloudflare Pages. Separate from whatever deploys
+# the live stemise.org site — does not touch that deployment.
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Add noindex header (this mirror only, not committed to source)
+        run: printf '/*\n  X-Robots-Tag: noindex, nofollow, noarchive\n' > dist/_headers
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=stemise-portfolio --branch=main
