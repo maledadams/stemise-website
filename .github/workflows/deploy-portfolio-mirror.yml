@@ -23,7 +23,8 @@ jobs:
       - run: npm run build
 
       - name: Add noindex header (this mirror only, not committed to source)
-        run: printf '/*\n  X-Robots-Tag: noindex, nofollow, noarchive\n' > dist/_headers
+        run: |
+          printf '/*\n  X-Robots-Tag: noindex, nofollow, noarchive\n' > dist/_headers
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
